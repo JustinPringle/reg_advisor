@@ -25,10 +25,11 @@ from collections import Counter
 
 import ers_engine as E
 import regadvisor_engine as R
-from data_loaders import load_curriculum, load_results
+from data_loaders import load_results
+from programme_loader import load_programme
 
-XLSX = "/mnt/project/Course_insert_sheet_with_prereqs.xlsx"
-CSV = "/mnt/project/ers_data.csv"
+YAML = "../programmes/civil.yaml"
+CSV = "../data/ers_data.csv"
 
 
 def advise_student(cur: dict[str, Any], rows: list[dict[str, Any]],
@@ -128,7 +129,7 @@ def format_report(sn: str, a: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    cur = load_curriculum(XLSX, programme_code="ENG-CIVIL", programme_name="Civil Engineering")
+    cur = load_programme(YAML)
     results = load_results(CSV)
 
     if len(sys.argv) > 1:
@@ -142,11 +143,11 @@ def main() -> None:
           f"({sum(1 for m in cur['modules'] if m['type']=='prescribed')} prescribed modules, "
           f"{cur['programme']['total_credits']:.0f} credits)\n")
 
-    sn = "218028575"
+    sn = "224058536"
     print(format_report(sn, advise_student(cur, results[sn])))
 
     print("\n--- COC check: student 226051631 asks to add these modules ---")
-    chk = check_additions(cur, results["226051631"], ["ENCV2SA", "MATH238", "ENCV3ST", "LING202"])
+    chk = check_additions(cur, results["224058536"], ["ENCV3TP", "ENEL4EB"])
     print(f"  ERS {chk['ers']['code']}  cap {chk['cap']}  requested {chk['add_credits']:.0f}cr")
     for row in chk["rows"]:
         print(f"    {row['verdict']:8} {row['code']:8} {row['reason']}")
@@ -155,6 +156,6 @@ def main() -> None:
     sw = sweep_programme(cur, results)
     print(f"  {sw['n']} students | ERS {sw['distribution']} | {sw['capped']} carry a credit cap")
 
-
+    return advise_student(cur, results[sn]),chk
 if __name__ == "__main__":
-    main()
+    ad,chk = main()
