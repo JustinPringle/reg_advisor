@@ -73,8 +73,10 @@ def index_transcript(results: list[dict[str, Any]],
         if score > cur_score:
             best[code] = {"code": code, "passed": passed, "mark": mark,
                           "credits": float(r.get("credits") or 0)}
-    passed_marks = [b["mark"] for b in best.values() if b["passed"] and b["mark"] is not None]
-    gpa = sum(passed_marks) / len(passed_marks) if passed_marks else 0.0
+    passed_marks = [b for b in best.values() if b["passed"] and b["mark"] is not None and b["credits"]]
+    weighted = sum(b["mark"] * b["credits"] for b in passed_marks)
+    total_cr = sum(b["credits"] for b in passed_marks)
+    gpa = weighted / total_cr if total_cr else 0.0
     passed_set = {c for c, b in best.items() if b["passed"]}
     credits_passed = sum(b["credits"] for b in best.values() if b["passed"])
     credits_by_level: dict[int, float] = {}
