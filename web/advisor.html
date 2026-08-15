@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Civil Engineering — Registration Advisor</title>
+<style>
+  :root{
+    --ink:#26261f; --muted:#6c6b64; --line:#e2e0d7; --bg:#faf9f5; --card:#ffffff;
+    --green:#0f6e56; --green-bg:#e1f5ee; --amber:#854f0b; --amber-bg:#faeeda;
+    --red:#a32d2d; --red-bg:#fcebeb; --gray:#5f5e5a; --gray-bg:#f1efe8;
+    --blue:#185fa5; --blue-bg:#e6f1fb; --accent:#1d3a5f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:var(--bg);line-height:1.5}
+  header{padding:14px 22px;border-bottom:1px solid var(--line);background:var(--card);
+         display:flex;align-items:baseline;gap:14px}
+  header h1{font-size:17px;font-weight:600;margin:0}
+  header .sub{font-size:12px;color:var(--muted)}
+  header .tag{margin-left:auto;font-size:11px;color:var(--muted);border:1px solid var(--line);
+              border-radius:20px;padding:3px 10px}
+  .wrap{display:grid;grid-template-columns:290px 1fr;height:calc(100vh - 52px)}
+  aside{border-right:1px solid var(--line);background:var(--card);overflow-y:auto;padding:12px}
+  aside input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:10px}
+  .stu{padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:14px}
+  .stu:hover{background:var(--bg)}
+  .stu.on{background:var(--blue-bg)}
+  .stu .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stu .yr{font-size:11px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .dot.green{background:var(--green)} .dot.orange{background:var(--amber)}
+  .dot.red{background:var(--red)} .dot.exclude{background:#5b1010} .dot.unknown,.dot.none{background:#b8b6ad}
+  main{overflow-y:auto;padding:22px}
+  .empty{color:var(--muted);font-size:14px;margin-top:40px;text-align:center}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  .card h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 12px}
+  .row{display:flex;flex-wrap:wrap;gap:22px}
+  .kv{font-size:13px} .kv b{display:block;font-size:19px;font-weight:600} .kv span{color:var(--muted)}
+  .name{font-size:20px;font-weight:600;margin:0 0 2px} .sn{color:var(--muted);font-size:13px;margin-bottom:14px}
+  .badge{display:inline-block;font-size:12px;font-weight:600;border-radius:20px;padding:3px 11px}
+  .b-green{background:var(--green-bg);color:var(--green)} .b-orange{background:var(--amber-bg);color:var(--amber)}
+  .b-red{background:var(--red-bg);color:var(--red)} .b-exclude{background:#f2d5d5;color:#5b1010}
+  .b-gray{background:var(--gray-bg);color:var(--gray)} .b-blue{background:var(--blue-bg);color:var(--blue)}
+  .stand{display:flex;gap:28px;flex-wrap:wrap}
+  .stand .col{min-width:210px}
+  .stand .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px}
+  .stand .note{font-size:12px;color:var(--muted);margin-top:6px}
+  .flag{font-size:12px;padding:8px 11px;border-radius:8px;margin-top:12px}
+  .flag.warn{background:var(--amber-bg);color:var(--amber)} .flag.ok{background:var(--green-bg);color:var(--green)}
+  .bucket{margin-bottom:14px}
+  .bucket .head{font-size:13px;font-weight:600;margin-bottom:7px;display:flex;align-items:center;gap:8px}
+  .count{font-size:11px;font-weight:600;border-radius:20px;padding:1px 8px}
+  .mod{display:flex;align-items:center;gap:10px;font-size:13px;padding:5px 0;border-bottom:1px solid var(--line)}
+  .mod:last-child{border-bottom:none}
+  .mod code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--bg);
+            border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  .mod .mn{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mod .cr{font-size:12px;color:var(--muted)}
+  .miss{font-size:12px;color:var(--red)}
+  .builder .mod{border-bottom:1px dashed var(--line)}
+  .builder label{display:flex;align-items:center;gap:10px;width:100%;cursor:pointer}
+  .tally{display:flex;align-items:center;gap:14px;margin:12px 0;font-size:14px}
+  .tally .n{font-size:20px;font-weight:600}
+  .tally .over{color:var(--red)}
+  button{font:inherit;font-size:14px;font-weight:500;border:1px solid var(--accent);background:var(--accent);
+         color:#fff;border-radius:8px;padding:8px 16px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}
+  .verdict{display:flex;align-items:center;gap:10px;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .v-CLEARED{color:var(--green);font-weight:600} .v-REVIEW{color:var(--amber);font-weight:600}
+  .verdict .rz{color:var(--muted);flex:1}
+</style>
+</head>
+<body>
+<header>
+  <h1>Civil Engineering — Registration Advisor</h1>
+  <span class="sub">academics decide · the tool clears the routine</span>
+  <span class="tag">Local · POPIA-contained</span>
+</header>
+
+<div class="wrap">
+  <aside>
+    <input id="search" placeholder="Search name or student number…" autocomplete="off">
+    <div id="list"></div>
+  </aside>
+  <main id="main"><div class="empty">Pick a student to see their standing, advice, and a plan you can build.</div></main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let STUDENTS = [], CURRENT = null, DETAIL = null;
+
+const BADGE = {green:"b-green",orange:"b-orange",red:"b-red",exclude:"b-exclude",none:"b-gray",unknown:"b-gray"};
+const esc = s => String(s??"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function boot(){
+  STUDENTS = await (await fetch("/api/students")).json();
+  renderList("");
+  $("#search").addEventListener("input", e => renderList(e.target.value.trim().toLowerCase()));
+}
+
+function renderList(q){
+  const rows = STUDENTS.filter(s =>
+    !q || s.name.toLowerCase().includes(q) || s.sn.includes(q));
+  $("#list").innerHTML = rows.map(s => `
+    <div class="stu ${s.sn===CURRENT?"on":""}" onclick="pick('${s.sn}')">
+      <span class="dot ${s.official}" title="registrar: ${s.official}"></span>
+      <span class="nm">${esc(s.name)||s.sn}</span>
+      ${s.agree?"":'<span title="engine differs" style="color:#ba7517;font-size:12px">≠</span>'}
+      <span class="yr">${s.year?("Y"+Math.round(s.year)):""}</span>
+    </div>`).join("") || '<div class="empty">No match.</div>';
+}
+
+async function pick(sn){
+  CURRENT = sn; renderList($("#search").value.trim().toLowerCase());
+  DETAIL = await (await fetch("/api/students/"+sn)).json();
+  render();
+}
+
+function modLine(m, withMiss){
+  const miss = (withMiss && m.unmet && m.unmet.length)
+    ? `<span class="miss">needs ${m.unmet.map(esc).join(", ")}</span>` : "";
+  return `<div class="mod"><code>${esc(m.code)}</code>
+    <span class="mn">${esc(m.name)}</span>${miss}
+    <span class="cr">${m.credits||0}cr</span></div>`;
+}
+
+function bucket(title, key, cls, withMiss){
+  const rows = DETAIL.advice[key]||[];
+  if(!rows.length) return "";
+  return `<div class="bucket"><div class="head">${title}
+    <span class="count ${cls}">${rows.length}</span></div>
+    ${rows.map(m => modLine(m, withMiss)).join("")}</div>`;
+}
+
+function render(){
+  const d = DETAIL, b = d.bio, off = d.official, en = d.engine;
+  const cap = d.cap==null ? "no cap" : (d.cap+" cr");
+  const agree = d.agree
+    ? `<div class="flag ok">Registrar and engine agree on standing.</div>`
+    : `<div class="flag warn">Engine re-derivation differs from the registrar
+        (${esc(en.status)} vs ${esc(off.status)}). The registrar's code stands;
+        the engine is indicative pending policy sign-off.</div>`;
+
+  $("#main").innerHTML = `
+  <div class="card">
+    <div class="name">${esc(b.surname)}, ${esc(b.name)}</div>
+    <div class="sn">${esc(b.sn)} · Year ${b.year_of_study?Math.round(b.year_of_study):"—"}</div>
+    <div class="row">
+      <div class="kv"><b>${b.gpa}</b><span>average mark</span></div>
+      <div class="kv"><b>${b.credits_passed}</b><span>credits passed</span></div>
+      <div class="kv"><b>${b.passed_count}</b><span>modules passed</span></div>
+      <div class="kv"><b>${b.semesters}</b><span>semesters</span></div>
+      <div class="kv"><b>${cap}</b><span>credit cap this term</span></div>
+    </div>
+    ${b.in_progress&&b.in_progress.length?`<div style="margin-top:12px;font-size:13px">
+      <span style="color:var(--muted)">Currently registered:</span>
+      ${b.in_progress.map(c=>`<code style="margin:0 3px">${esc(c)}</code>`).join("")}</div>`:""}
+  </div>
+
+  <div class="card"><h2>Academic standing</h2>
+    <div class="stand">
+      <div class="col"><div class="lbl">Registrar (authoritative)</div>
+        <span class="badge ${BADGE[off.status]}">${esc(off.code||"—")} · ${esc(off.status)}</span>
+        <div class="note">${esc(off.text||"No intervention proposed — continuing.")}</div></div>
+      <div class="col"><div class="lbl">Engine cross-check</div>
+        <span class="badge ${BADGE[en.status]}">${esc(en.status)}</span>
+        <div class="note">cumulative ${en.cumulative_pct}% · latest semester
+          ${en.semester_pct}% (${esc(en.period)})</div></div>
+    </div>${agree}
+  </div>
+
+  <div class="card builder"><h2>Build a plan</h2>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px">
+      Tick modules to register. The tool tallies credits against the cap and
+      stamps each CLEARED or REVIEW.</p>
+    <div id="pick-mods">
+      ${[...d.advice.can_register, ...d.advice.concession_possible].map(m=>`
+        <div class="mod"><label>
+          <input type="checkbox" value="${esc(m.code)}" data-cr="${m.credits||0}" onchange="tally()">
+          <code>${esc(m.code)}</code><span class="mn">${esc(m.name)}</span>
+          <span class="cr">${m.credits||0}cr</span></label></div>`).join("")
+        || '<div class="empty">Nothing eligible to add right now.</div>'}
+    </div>
+    <div class="tally"><span>Selected: <span class="n" id="sel-cr">0</span> cr</span>
+      <span style="color:var(--muted)">cap ${cap}</span>
+      <button id="check-btn" onclick="checkPlan()" disabled>Check plan</button></div>
+    <div id="verdicts"></div>
+  </div>
+
+  <div class="card"><h2>Advice</h2>
+    ${bucket("Can register","can_register","b-green",false)}
+    ${bucket("Concession possible","concession_possible","b-orange",true)}
+    ${bucket("Blocked","cannot_register","b-red",true)}
+    ${bucket("Needs review","needs_review","b-blue",true)}
+    ${bucket("Already passed","passed","b-gray",false)}
+  </div>`;
+  tally();
+}
+
+function selected(){
+  return [...document.querySelectorAll("#pick-mods input:checked")];
+}
+function tally(){
+  const sel = selected();
+  const cr = sel.reduce((t,i)=>t+Number(i.dataset.cr||0),0);
+  const el = $("#sel-cr"); if(!el) return;
+  el.textContent = cr;
+  const cap = DETAIL.cap;
+  el.className = "n" + ((cap!=null && cr>cap) ? " over":"");
+  const btn = $("#check-btn"); if(btn) btn.disabled = sel.length===0;
+}
+async function checkPlan(){
+  const codes = selected().map(i=>i.value);
+  const r = await (await fetch("/api/check",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({sn:CURRENT, codes})})).json();
+  $("#verdicts").innerHTML = `<div style="margin-top:6px">` + r.rows.map(v=>`
+    <div class="verdict"><code>${esc(v.code)}</code>
+      <span class="v-${v.verdict}">${v.verdict}</span>
+      <span class="rz">${esc(v.reason)}</span></div>`).join("") + `</div>`;
+}
+boot();
+</script>
+</body>
+</html>
