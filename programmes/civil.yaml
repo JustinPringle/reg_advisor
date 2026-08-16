@@ -1,0 +1,332 @@
+# Civil Engineering — programme definition and prerequisite rules.
+#
+# Authored directly in the engine's term grammar (regadvisor_engine.eval_term),
+# so no free-text parsing happens at runtime. yaml.safe_load returns exactly the
+# dicts and lists the engine reads.
+#
+# Term shapes (a module's `prereqs` is a list, AND-ed together):
+#   CODE                       course passed
+#   {code: X, min_mark: N}     best mark >= N carries (a 40-49 carry; no full pass)
+#   {code: X, soft: true}      recommended only — never blocks
+#   {all: [...]}               every term holds
+#   {any: [...]}               at least one holds
+#   {any_n: N, of: [...]}      at least N hold
+#   {min_year: N}              student in year N of study or later
+#   {min_sem: N}               registered for >= N semesters
+#   {min_credits: N, level: L} N passed credits (optionally at NQF level L)
+#   {review: "text"}           NEVER auto-clears — routes the module to a human
+#
+# `coreqs` are recorded for fidelity but the advice engine does not gate on them
+# (co-requisites are taken in the same semester). They document intent only.
+#
+# SEMANTIC NOTES:
+#   * "(40%)" carries. The sheet lets a 40–49% result carry into the next module.
+#     Authored as {code: X, min_mark: 40}: a mark >= 40 satisfies the prereq, no
+#     full pass required. A bare code term still requires a pass (>=50).
+#   * "(DP)" prereqs. Encoded as a plain pass requirement (stricter than "has DP")
+#     — still open for your sign-off.
+
+programme:
+  code: ENG-CIVIL
+  name: Civil Engineering
+
+# Policy, as data. Every threshold the engines apply is authored here, so a new
+# programme is a copy of this file with different numbers -- no code change. Omit
+# any key (or the whole block) to inherit the safe defaults in
+# programme_loader.DEFAULT_RULES.
+rules:
+  concession:            # when a near-miss may be conceded (eval_advice)
+    min_gpa: 55          # credit-weighted average floor
+    max_missing: 1       # requirements still short and eligible
+    prereq_floor: 45     # must have scored ABOVE this in the failed prereq
+  autoclear:             # the routine concessions the academic pre-authorises (D4)
+    enabled: true
+    min_wam: 55
+    carry_band: [46, 49] # near-miss carry band in the exact prereq (>45)
+    single_miss_only: true
+    allowed_standings: [green, orange]   # never red / excluded
+    rule_id: CAC-v1
+  credit_cap:            # ERS standing -> term credit cap (null = no cap)
+    green: null
+    orange: 48
+    red: 32
+    exclude: 0
+    ERS-ORANGE-SEM: 56
+    ERS-RED-SECOND: 24
+
+modules:
+
+  # ---- Year 1, Semester 1 -------------------------------------------------
+  - {code: CHEM181, name: "Chemistry for Engineers 1A", credits: 8,  year: 1, sem: 1}
+  - {code: ENCH1TC, name: "Technical Communication for Engineers", credits: 8, year: 1, sem: 1}
+  - {code: ENME1DR, name: "Engineering Drawing", credits: 8, year: 1, sem: 1}
+  - {code: MATH131, name: "Mathematics 1A (Eng)", credits: 16, year: 1, sem: 1}
+  - {code: MATH132, name: "Applied Mathematics 1A (Eng)", credits: 16, year: 1, sem: 1}
+  - code: PHYS151
+    name: "Engineering Physics 1A"
+    credits: 16
+    year: 1
+    sem: 1
+    coreqs:
+      - any: [MATH130, MATH195]   # co-req only — not gated
+
+  # ---- Year 1, Semester 2 -------------------------------------------------
+  - code: CHEM191
+    name: "Chemistry for Engineers 1B"
+    credits: 8
+    year: 1
+    sem: 2
+    prereqs:
+      - {code: CHEM181, min_mark: 40}
+  - code: ENCV1ED
+    name: "Introduction to Civil Design"
+    credits: 8
+    year: 1
+    sem: 2
+    prereqs: [ENME1DR]
+  - {code: ENME1EM, name: "Introduction to Engineering Materials", credits: 8, year: 1, sem: 2}
+  - code: MATH141
+    name: "Mathematics 1B (Eng)"
+    credits: 16
+    year: 1
+    sem: 2
+    prereqs:
+      - {code: MATH131, min_mark: 40}
+  - code: MATH142
+    name: "Applied Mathematics 1B (Eng)"
+    credits: 16
+    year: 1
+    sem: 2
+    prereqs:
+      - {code: MATH131, min_mark: 40}
+      - {code: MATH132, min_mark: 40}
+  - code: PHYS152
+    name: "Engineering Physics 1B"
+    credits: 16
+    year: 1
+    sem: 2
+    prereqs:
+      - {code: PHYS151, min_mark: 40}
+  - {code: ENCV1EP, name: "Engineering Practice Workshop", credits: 0, year: 1, sem: 2, is_dp: true}
+
+  # ---- Year 2, Semester 1 -------------------------------------------------
+  - code: ENCV2MT
+    name: "Civil Engineering Materials"
+    credits: 8
+    year: 2
+    sem: 1
+    prereqs: [ENME1EM]
+  - code: ENCV2SA
+    name: "Structures 1"
+    credits: 16
+    year: 2
+    sem: 1
+    prereqs: [MATH141, MATH142]
+  - code: ENSV2SE
+    name: "Surveying Engineering"
+    credits: 16
+    year: 2
+    sem: 1
+    # Sheet: ">= 62cr level 1, >=32cr core, >=2 sem reg". "core" credits are not
+    # tracked separately, so the 62cr-L1 + 2-semester gates stand in for it.
+    prereqs:
+      - {min_credits: 62, level: 1}
+      - {min_sem: 2}
+  - code: MATH238
+    name: "Mathematics 2A (Eng)"
+    credits: 16
+    year: 2
+    sem: 1
+    prereqs: [MATH131, MATH141]
+  - {code: "ZULN101_OR", name: "Basic isiZulu Language Studies (or other language)", credits: 16, year: 2, sem: 1, type: elective}
+  - {code: "ELECTIVE_Y2S1", name: "Elective", credits: 16, year: 2, sem: 1, type: elective}
+
+  # ---- Year 2, Semester 2 -------------------------------------------------
+  - code: ENCV2FL
+    name: "Fluids 1"
+    credits: 8
+    year: 2
+    sem: 2
+    prereqs:
+      - MATH142
+      - {any: [PHYS151, PHYS110]}
+  - code: ENCV2MW
+    name: "Materials Workshop"
+    credits: 0
+    year: 2
+    sem: 2
+    is_dp: true
+    prereqs: [ENCV2MT]          # sheet: ENCV2MT (DP)
+  - code: ENCV2SB
+    name: "Structures 2"
+    credits: 16
+    year: 2
+    sem: 2
+    prereqs: [ENCV2SA]
+  - code: ENCV2SD
+    name: "Structural Design 1"
+    credits: 16
+    year: 2
+    sem: 2
+    prereqs: [ENCV2SA]
+  - code: GEOL215
+    name: "Elements of Geology for Civil Engineering"
+    credits: 16
+    year: 2
+    sem: 2
+    prereqs:                    # sheet: same aggregate gate as ENSV2SE
+      - {min_credits: 62, level: 1}
+      - {min_sem: 2}
+  - code: MATH248
+    name: "Mathematics 2B (Eng)"
+    credits: 16
+    year: 2
+    sem: 2
+    prereqs: [MATH238, MATH141]
+
+  # ---- Year 3, Semester 1 -------------------------------------------------
+  - code: ENCV3FA
+    name: "Fluids 2"
+    credits: 16
+    year: 3
+    sem: 1
+    prereqs: [ENCV2FL]
+  - code: ENCV3G1
+    name: "Geotechnical Engineering Studies 1"
+    credits: 16
+    year: 3
+    sem: 1
+    # Sheet: ">= 144cr total, >=32cr level 2, passed all 1st year". There are
+    # exactly 144 level-1 credits in the programme, so min_credits:144 level:1
+    # encodes "passed all first year" (and subsumes the 144-total gate).
+    prereqs:
+      - {min_credits: 144, level: 1}
+      - {min_credits: 32, level: 2}
+  - code: ENCV3ST
+    name: "Structures 3"
+    credits: 16
+    year: 3
+    sem: 1
+    prereqs: [ENCV2SA, ENCV2SB]
+  - code: ENCV3TT
+    name: "Transport 1"
+    credits: 16
+    year: 3
+    sem: 1
+    prereqs:
+      - {min_year: 3}           # sheet: "Must be in 3rd yr of study"
+  - code: STAT370
+    name: "Engineering Statistics"
+    credits: 8
+    year: 3
+    sem: 1
+    prereqs: [MATH248]          # sheet: MATH248 (DP)
+
+  # ---- Year 3, Semester 2 -------------------------------------------------
+  - code: ENCV3CW
+    name: "Civil CADD Workshop"
+    credits: 0
+    year: 3
+    sem: 2
+    is_dp: true
+    prereqs: [ENCV3ST, ENCV2SD] # sheet: ENCV3ST (DP); ENCV2SD
+  - code: ENCV3FB
+    name: "Fluids 3"
+    credits: 16
+    year: 3
+    sem: 2
+    prereqs: [ENCV2FL, STAT370]
+  - code: ENCV3G2
+    name: "Geotechnical Engineering Studies 2"
+    credits: 16
+    year: 3
+    sem: 2
+    prereqs: [ENCV3G1]
+  - code: ENCV3SD
+    name: "Structural Design 2"
+    credits: 16
+    year: 3
+    sem: 2
+    prereqs: [ENCV2SD, ENCV3ST]
+  - code: ENCV3TP
+    name: "Transport 2"
+    credits: 8
+    year: 3
+    sem: 2
+    prereqs: [ENCV3G1, ENCV3TT, GEOL215]
+  - code: ENCV3MS
+    name: "Mathematical Systems"
+    credits: 8
+    year: 3
+    sem: 2
+    prereqs: [MATH238, MATH248, STAT370]
+  - {code: "ELECTIVE_Y3S2", name: "Elective", credits: 8, year: 3, sem: 2, type: elective}
+
+  # ---- Year 4, Semester 1 -------------------------------------------------
+  - code: ENCH4ML
+    name: "Engineering Management & Labour Relations"
+    credits: 8
+    year: 4
+    sem: 1
+    # Sheet: "All first year modules, 96 credits of 2nd year modules".
+    prereqs:
+      - {min_credits: 144, level: 1}
+      - {min_credits: 96, level: 2}
+  - code: ENCV4GS
+    name: "Ground and Structural Engineering"
+    credits: 16
+    year: 4
+    sem: 1
+    prereqs: [ENCV3G1, ENCV3G2, ENCV3SD, ENCV3ST]
+  - code: ENCV4TE
+    name: "Transport & Environmental Management"
+    credits: 16
+    year: 4
+    sem: 1
+    prereqs: [ENCV3TT]
+  - code: ENCV4WE
+    name: "Water & Environmental Engineering"
+    credits: 16
+    year: 4
+    sem: 1
+    prereqs: [ENCV2FL, ENCV3FA, ENCV3FB]
+  - code: ENPD7PP
+    name: "Professional Practice"
+    credits: 8
+    year: 4
+    sem: 1
+    prereqs:
+      - {min_year: 4}           # sheet: only 4th-year registrations permitted
+  - {code: "ELECTIVE_Y4S1", name: "Elective", credits: 8, year: 4, sem: 1, type: elective}
+
+  # ---- Year 4, Semester 2 -------------------------------------------------
+  - code: ENCV4DE
+    name: "Civil Engineering Design Project"
+    credits: 24
+    year: 4
+    sem: 2
+    # Sheet: "Passed all preceding core modules in Program".
+    prereqs:
+      - all: &all_core [CHEM181, ENCH1TC, ENME1DR, MATH131, MATH132, PHYS151,
+                        CHEM191, ENCV1ED, ENME1EM, MATH141, MATH142, PHYS152, ENCV1EP,
+                        ENCV2MT, ENCV2SA, ENSV2SE, MATH238,
+                        ENCV2FL, ENCV2MW, ENCV2SB, ENCV2SD, GEOL215, MATH248,
+                        ENCV3FA, ENCV3G1, ENCV3ST, ENCV3TT, STAT370,
+                        ENCV3CW, ENCV3FB, ENCV3G2, ENCV3SD, ENCV3TP, ENCV3MS,
+                        ENCH4ML, ENCV4GS, ENCV4TE, ENCV4WE, ENPD7PP]
+  - code: ENCV4DS
+    name: "Dissertation"
+    credits: 24
+    year: 4
+    sem: 2
+    prereqs:
+      - all: *all_core          # same "all preceding core" gate as ENCV4DE
+  - {code: ENCV4VW, name: "Practical Vacation Work", credits: 0, year: 4, sem: 2, is_dp: true}
+  - code: ENPD7CL
+    name: "Management of Construction Contracts"
+    credits: 8
+    year: 4
+    sem: 2
+    prereqs:
+      - {min_year: 4}           # sheet: only 4th-year registrations permitted
+  - {code: "ELECTIVE_Y4S2", name: "Elective", credits: 16, year: 4, sem: 2, type: elective}

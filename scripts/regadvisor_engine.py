@@ -73,8 +73,13 @@ def index_transcript(results: list[dict[str, Any]],
         if score > cur_score:
             best[code] = {"code": code, "passed": passed, "mark": mark,
                           "credits": float(r.get("credits") or 0)}
-    passed_marks = [b["mark"] for b in best.values() if b["passed"] and b["mark"] is not None]
-    gpa = sum(passed_marks) / len(passed_marks) if passed_marks else 0.0
+    # Credit-weighted average mark: each module's best-attempt mark weighted by
+    # its credits. Modules without a numeric mark (e.g. an ungraded pass or an
+    # in-progress registration) and 0-credit DP modules carry no weight.
+    graded = [b for b in best.values() if b["mark"] is not None and b["credits"]]
+    weighted = sum(b["mark"] * b["credits"] for b in graded)
+    total_cr = sum(b["credits"] for b in graded)
+    gpa = weighted / total_cr if total_cr else 0.0
     passed_set = {c for c, b in best.items() if b["passed"]}
     credits_passed = sum(b["credits"] for b in best.values() if b["passed"])
     credits_by_level: dict[int, float] = {}
@@ -175,8 +180,19 @@ def eval_term(term: Any, tx: dict[str, Any]) -> dict[str, Any]:
                     "missing": [] if _has(tx, term["code"]) else [term["code"]]}
         b = _best(tx, term["code"])
         if term.get("min_mark") is not None:
-            ok = bool(b and b["passed"] and (b["mark"] is None or b["mark"] >= term["min_mark"]))
-            return {"met": ok, "soft": False, "label": f"{term['code']}>={term['min_mark']}",
+            mm = term["min_mark"]
+            # min_mark is a CARRY threshold: scoring at or above it satisfies the
+            # prerequisite even without a full pass (the 40-49 carry the handbook
+            # allows). A recorded pass with no mark also counts. A bare code term
+            # -- one with no min_mark -- still requires a full pass; author a
+            # min_mark to permit a carry.
+            if b is None:
+                ok = False
+            elif b["mark"] is not None:
+                ok = b["mark"] >= mm
+            else:
+                ok = b["passed"]
+            return {"met": ok, "soft": False, "label": f"{term['code']}>={mm}",
                     "missing": [] if ok else [term["code"]]}
         ok = _has(tx, term["code"])
         return {"met": ok, "soft": False, "label": term["code"],
@@ -184,32 +200,96 @@ def eval_term(term: Any, tx: dict[str, Any]) -> dict[str, Any]:
     return {"met": True, "soft": False, "label": "", "missing": []}
 
 
+def unmet_count(term: Any, tx: dict[str, Any]) -> int:
+    """How many more distinct requirements a prereq term still needs.
+
+    A satisfied term counts zero. An OR counts as one -- any single option
+    closes it. An AND sums its unmet parts. This is the honest 'distance to
+    eligible', unlike the raw leaf count (which over-counts an OR) or the
+    top-level term count (which under-counts an AND-wrapped list)."""
+    if eval_term(term, tx)["met"]:
+        return 0
+    if isinstance(term, list):
+        term = {"all": term}
+    if isinstance(term, dict):
+        if "all" in term:
+            return sum(unmet_count(t, tx) for t in term["all"])
+        if "any" in term:
+            return 1
+        if "any_n" in term and "of" in term:
+            met = sum(1 for t in term["of"] if eval_term(t, tx)["met"])
+            return max(1, term["any_n"] - met)
+    return 1
+
+
+def carry_ok(term: Any, tx: dict[str, Any], floor: float = 45) -> bool:
+    """True if an unmet prereq term is a near-miss the student may carry: they
+    sat the module and scored above `floor`. A prereq never attempted, or failed
+    at or below the floor, is not carry-eligible. An OR is closed by any one
+    near-miss option; an AND needs every part to qualify; structural terms
+    (year, credits, review) are never a mark carry."""
+    if eval_term(term, tx)["met"]:
+        return True
+    if isinstance(term, list):
+        term = {"all": term}
+    code = None
+    if isinstance(term, dict):
+        if "all" in term:
+            return all(carry_ok(t, tx, floor) for t in term["all"])
+        if "any" in term:
+            return any(carry_ok(t, tx, floor) for t in term["any"])
+        if "any_n" in term and "of" in term:
+            return sum(carry_ok(t, tx, floor) for t in term["of"]) >= term["any_n"]
+        code = term.get("code")
+    elif isinstance(term, str):
+        code = term
+    if not code:
+        return False
+    b = _best(tx, code)
+    return bool(b and b.get("mark") is not None and b["mark"] > floor)
+
+
 def check_prereqs(mod: dict[str, Any], tx: dict[str, Any]) -> dict[str, Any]:
     """AND over a module's prereq list. Soft terms never block.
-    -> {met, missing:[code], unmet:[label], soft:[code]}."""
+    -> {met, missing:[code], unmet:[label], soft:[code], n_unmet}."""
     pr = mod.get("prereqs") or []
     if not pr:
-        return {"met": True, "missing": [], "unmet": [], "soft": []}
-    rs = [eval_term(t, tx) for t in pr]
-    hard = [r for r in rs if not r["soft"]]
-    return {"met": all(r["met"] for r in hard),
-            "missing": [m for r in hard if not r["met"] for m in r["missing"]],
-            "unmet": [r["label"] for r in hard if not r["met"]],
-            "soft": [m for r in rs if r["soft"] and r["missing"] for m in r["missing"]]}
+        return {"met": True, "missing": [], "unmet": [], "soft": [], "n_unmet": 0}
+    paired = [(t, eval_term(t, tx)) for t in pr]
+    hard = [(t, r) for t, r in paired if not r["soft"]]
+    return {"met": all(r["met"] for _, r in hard),
+            "missing": [m for _, r in hard if not r["met"] for m in r["missing"]],
+            "unmet": [r["label"] for _, r in hard if not r["met"]],
+            "soft": [m for _, r in paired if r["soft"] and r["missing"] for m in r["missing"]],
+            "n_unmet": sum(unmet_count(t, tx) for t, r in hard
+                           if not str(r["label"]).startswith("[review"))}
 
 
 # --- The four-bucket advice classifier --------------------------------------
 def eval_advice(curriculum: dict[str, Any], tx: dict[str, Any],
-                concession_gpa: float = 55, max_missing: int = 1) -> dict[str, Any]:
+                concession_gpa: float | None = None, max_missing: int | None = None,
+                concession_floor: float | None = None) -> dict[str, Any]:
     """Classify every prescribed course into four buckets.
 
+    Concession thresholds come from the programme's rules block
+    (curriculum["rules"]["concession"]); an explicit argument overrides it, and a
+    hard default backs both so the function works on a bare curriculum.
+
     can_register        : prereqs met, not yet passed
-    concession_possible : near-miss -> route to a human (gpa high, <=1 missing)
+    concession_possible : near-miss -> route to a human (gpa high, <=1 short,
+                          failed prereq scored above the floor)
     cannot_register     : blocked
     repeat_needed       : attempted before (overlay flag; a course can be both
                           repeat_needed and one of the three above)
     passed              : already done
     """
+    c = (curriculum.get("rules") or {}).get("concession") or {}
+    if concession_gpa is None:
+        concession_gpa = c.get("min_gpa", 55)
+    if max_missing is None:
+        max_missing = c.get("max_missing", 1)
+    if concession_floor is None:
+        concession_floor = c.get("prereq_floor", 45)
     out = {"can_register": [], "concession_possible": [], "cannot_register": [],
            "needs_review": [], "repeat_needed": [], "passed": []}
     for mod in curriculum.get("modules", []):
@@ -227,12 +307,18 @@ def eval_advice(curriculum: dict[str, Any], tx: dict[str, Any],
         # An opaque handbook condition can't be scored -- never call it a
         # near-miss. It goes to a human either way.
         has_review = any(str(m).startswith("review:") for m in pc["missing"])
-        hard_missing = [m for m in pc["missing"] if not str(m).startswith("review:")]
+        # A concession needs two things: one requirement short (n_unmet), AND the
+        # failed prereq nearly passed -- scored above the floor. A prereq never
+        # attempted or failed well below is not carry-eligible, so it blocks.
+        carryable = all(carry_ok(t, tx, concession_floor)
+                        for t in (mod.get("prereqs") or [])
+                        if not eval_term(t, tx)["soft"])
         if pc["met"]:
             out["can_register"].append(row)
         elif has_review:
             out["needs_review"].append(row)
-        elif tx.get("gpa", 0) >= concession_gpa and len(hard_missing) <= max_missing:
+        elif (tx.get("gpa", 0) >= concession_gpa
+              and pc["n_unmet"] <= max_missing and carryable):
             out["concession_possible"].append(row)
         else:
             out["cannot_register"].append(row)

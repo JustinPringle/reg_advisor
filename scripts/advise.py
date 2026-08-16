@@ -25,10 +25,11 @@ from collections import Counter
 
 import ers_engine as E
 import regadvisor_engine as R
-from data_loaders import load_curriculum, load_results
+from data_loaders import load_results
+from programme_loader import load_programme
 
-XLSX = "/mnt/project/Course_insert_sheet_with_prereqs.xlsx"
-CSV = "/mnt/project/ers_data.csv"
+YAML = "../programmes/civil.yaml"
+CSV = "../data/ers_data.csv"
 
 
 def advise_student(cur: dict[str, Any], rows: list[dict[str, Any]],
@@ -37,7 +38,8 @@ def advise_student(cur: dict[str, Any], rows: list[dict[str, Any]],
     tx = R.index_transcript(rows)
     metrics = E.derive_metrics(rows, policy, history)
     ers = E.classify(metrics, policy=policy)
-    cap = R.ers_credit_cap(ers["code"], ers["status"])
+    rules = cur.get("rules") or {}
+    cap = R.ers_credit_cap(ers["code"], ers["status"], caps=rules.get("credit_cap"))
     advice = R.eval_advice(cur, tx)
     return {"tx": tx, "metrics": metrics, "ers": ers, "cap": cap, "advice": advice}
 
@@ -128,7 +130,7 @@ def format_report(sn: str, a: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    cur = load_curriculum(XLSX, programme_code="ENG-CIVIL", programme_name="Civil Engineering")
+    cur = load_programme(YAML)
     results = load_results(CSV)
 
     if len(sys.argv) > 1:
