@@ -38,7 +38,8 @@ def advise_student(cur: dict[str, Any], rows: list[dict[str, Any]],
     tx = R.index_transcript(rows)
     metrics = E.derive_metrics(rows, policy, history)
     ers = E.classify(metrics, policy=policy)
-    cap = R.ers_credit_cap(ers["code"], ers["status"])
+    rules = cur.get("rules") or {}
+    cap = R.ers_credit_cap(ers["code"], ers["status"], caps=rules.get("credit_cap"))
     advice = R.eval_advice(cur, tx)
     return {"tx": tx, "metrics": metrics, "ers": ers, "cap": cap, "advice": advice}
 
@@ -143,11 +144,11 @@ def main() -> None:
           f"({sum(1 for m in cur['modules'] if m['type']=='prescribed')} prescribed modules, "
           f"{cur['programme']['total_credits']:.0f} credits)\n")
 
-    sn = "224058536"
+    sn = "218028575"
     print(format_report(sn, advise_student(cur, results[sn])))
 
     print("\n--- COC check: student 226051631 asks to add these modules ---")
-    chk = check_additions(cur, results["224058536"], ["ENCV3TP", "ENEL4EB"])
+    chk = check_additions(cur, results["226051631"], ["ENCV2SA", "MATH238", "ENCV3ST", "LING202"])
     print(f"  ERS {chk['ers']['code']}  cap {chk['cap']}  requested {chk['add_credits']:.0f}cr")
     for row in chk["rows"]:
         print(f"    {row['verdict']:8} {row['code']:8} {row['reason']}")
@@ -156,6 +157,6 @@ def main() -> None:
     sw = sweep_programme(cur, results)
     print(f"  {sw['n']} students | ERS {sw['distribution']} | {sw['capped']} carry a credit cap")
 
-    return advise_student(cur, results[sn]),chk
+
 if __name__ == "__main__":
-    ad,chk = main()
+    main()

@@ -41,6 +41,44 @@ _TERM_SHAPES: set[frozenset[str]] = {
 ELECTIVE_TYPES = {"elective", "free_elective", "core_elective"}
 _NUMERIC_KEYS = ("min_mark", "min_year", "min_sem", "min_credits", "level", "any_n")
 
+# --- Policy defaults --------------------------------------------------------
+# Every rule the engines apply lives here as data. A programme file may carry a
+# `rules:` block to override any of these, key by key; anything it omits falls
+# back to the default below. Missing or malformed rules never crash -- they use
+# the safe default, so a new programme works before its rules are authored.
+DEFAULT_RULES: dict[str, Any] = {
+    "concession": {          # regadvisor_engine.eval_advice
+        "min_gpa": 55,       # credit-weighted average floor
+        "max_missing": 1,    # requirements short still eligible
+        "prereq_floor": 45,  # must have scored ABOVE this in the failed prereq
+    },
+    "autoclear": {           # triage.py -- an academic-authored waiver rule
+        "enabled": True,
+        "min_wam": 55,
+        "carry_band": [46, 49],
+        "single_miss_only": True,
+        "allowed_standings": ["green", "orange"],
+        "rule_id": "CAC-v1",
+    },
+    "credit_cap": {          # regadvisor_engine.ers_credit_cap (status or code)
+        "green": None, "orange": 48, "red": 32, "exclude": 0,
+        "ERS-ORANGE-FIRSTSEM": 48, "ERS-ORANGE-CUMUL": 48, "ERS-ORANGE-SEM": 56,
+        "ERS-RED-FIRST": 32, "ERS-RED-SECOND": 24, "ERS-EXCLUDE": 0,
+    },
+}
+
+
+def merge_rules(authored: dict[str, Any] | None) -> dict[str, Any]:
+    """Layer a programme's rules over the defaults, one block at a time, so a
+    file may override a single number and inherit the rest."""
+    authored = authored or {}
+    out: dict[str, Any] = {}
+    for block, default in DEFAULT_RULES.items():
+        out[block] = {**default, **(authored.get(block) or {})}
+    for block in authored:            # keep unknown blocks, but they do nothing
+        out.setdefault(block, authored[block])
+    return out
+
 
 # --- Load -------------------------------------------------------------------
 def load_programme(path: str, validate: bool = True,
@@ -65,7 +103,8 @@ def load_programme(path: str, validate: bool = True,
     prog.setdefault("code", "PROG")
     prog.setdefault("name", "")
     prog.setdefault("total_credits", total)   # a declared value wins if present
-    cur = {"programme": prog, "modules": modules, "elective_groups": {}}
+    cur = {"programme": prog, "modules": modules, "elective_groups": {},
+           "rules": merge_rules(raw.get("rules"))}
 
     if validate:
         report = validate_programme(cur)
