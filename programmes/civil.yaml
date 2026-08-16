@@ -30,6 +30,30 @@ programme:
   code: ENG-CIVIL
   name: Civil Engineering
 
+# Policy, as data. Every threshold the engines apply is authored here, so a new
+# programme is a copy of this file with different numbers -- no code change. Omit
+# any key (or the whole block) to inherit the safe defaults in
+# programme_loader.DEFAULT_RULES.
+rules:
+  concession:            # when a near-miss may be conceded (eval_advice)
+    min_gpa: 55          # credit-weighted average floor
+    max_missing: 1       # requirements still short and eligible
+    prereq_floor: 45     # must have scored ABOVE this in the failed prereq
+  autoclear:             # the routine concessions the academic pre-authorises (D4)
+    enabled: true
+    min_wam: 55
+    carry_band: [46, 49] # near-miss carry band in the exact prereq (>45)
+    single_miss_only: true
+    allowed_standings: [green, orange]   # never red / excluded
+    rule_id: CAC-v1
+  credit_cap:            # ERS standing -> term credit cap (null = no cap)
+    green: null
+    orange: 48
+    red: 32
+    exclude: 0
+    ERS-ORANGE-SEM: 56
+    ERS-RED-SECOND: 24
+
 modules:
 
   # ---- Year 1, Semester 1 -------------------------------------------------
