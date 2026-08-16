@@ -94,18 +94,45 @@
   button.primary{font:inherit;font-size:14px;font-weight:500;border:1px solid var(--accent);background:var(--accent);
          color:#fff;border-radius:8px;padding:8px 16px;cursor:pointer}
   .saved{font-size:12px;color:var(--green)}
+  #progpick{margin-left:4px;padding:7px 10px;border-radius:8px;border:1px solid var(--line);
+    background:#fff;font-size:14px;max-width:280px}
+  #uploadbtn{margin-left:auto}
+  dialog{border:1px solid var(--line);border-radius:12px;padding:22px;max-width:440px;width:90%}
+  dialog::backdrop{background:rgba(0,0,0,.35)}
+  dialog input[type=text],dialog input:not([type]){padding:7px 9px;border:1px solid var(--line);border-radius:8px}
+  dialog label{font-size:13px;color:var(--muted)}
 </style>
 </head>
 <body>
 <header>
-  <h1>Civil Engineering — Registration Advisor</h1>
+  <h1 id="title">Registration Advisor</h1>
+  <select id="progpick" onchange="switchProgramme(this.value)" title="Programme"></select>
   <div class="modes">
     <button class="modebtn on" id="m-advisor" onclick="switchMode('advisor')">Advisor</button>
     <button class="modebtn" id="m-queue" onclick="switchMode('queue')">Concession queue</button>
     <button class="modebtn" id="m-admin" onclick="switchMode('admin')">Admin worklist</button>
   </div>
+  <button class="modebtn" id="uploadbtn" onclick="openUpload()" title="Ingest a semester's ERS">Upload ERS</button>
   <span class="tag">Local · POPIA-contained</span>
 </header>
+
+<dialog id="upl">
+  <form method="dialog" onsubmit="return false">
+    <h2 style="margin:0 0 10px">Ingest an ERS export</h2>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px">
+      Reads the export into this machine's database and refreshes the picker.
+      Re-uploading the same file changes nothing; each new semester adds to the history.</p>
+    <label>Programme code<br><input id="u-code" placeholder="ENG-CIVIL" style="width:100%"></label><br><br>
+    <label>Name (optional)<br><input id="u-name" placeholder="Civil Engineering" style="width:100%"></label><br><br>
+    <label>Rule file (optional)<br><input id="u-yaml" placeholder="../programmes/civil.yaml" style="width:100%"></label><br><br>
+    <label>ERS file (PDF, text, or CSV)<br><input id="u-file" type="file"></label><br><br>
+    <div id="u-msg" style="font-size:13px;min-height:18px"></div>
+    <div style="text-align:right">
+      <button class="modebtn" onclick="document.getElementById('upl').close()">Cancel</button>
+      <button class="approve" id="u-go" onclick="doUpload()">Ingest</button>
+    </div>
+  </form>
+</dialog>
 
 <div class="wrap">
   <aside id="side"></aside>
@@ -115,13 +142,55 @@
 <script>
 const $ = s => document.querySelector(s);
 let MODE="advisor", STUDENTS=[], QUEUE=null, ADMIN=null, DEC={}, QFILTER="pending", AFILTER="all", CURRENT=null, DETAIL=null;
+let PROGRAMME=null, PROGRAMMES=[];
+const pq = extra => "?programme="+encodeURIComponent(PROGRAMME||"")+(extra||"");
 const BADGE={green:"b-green",orange:"b-orange",red:"b-red",exclude:"b-exclude",none:"b-gray",unknown:"b-gray"};
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const R=x=>Math.round(x);
 const key=(sn,code)=>sn+"|"+code;
 const today=()=>new Date().toISOString().slice(0,10);
 
-async function boot(){ STUDENTS=await (await fetch("/api/students")).json(); renderSide(); }
+async function boot(){
+  const p=await (await fetch("/api/programmes")).json();
+  PROGRAMMES=p.programmes||[]; PROGRAMME=p.current;
+  const sel=$("#progpick");
+  sel.innerHTML=PROGRAMMES.map(pr=>`<option value="${esc(pr.code)}">${esc(pr.name)} (${pr.students})</option>`).join("");
+  if(PROGRAMME) sel.value=PROGRAMME;
+  await loadStudents();
+}
+async function loadStudents(){
+  if(!PROGRAMME){ STUDENTS=[]; renderSide(); return; }
+  const pr=PROGRAMMES.find(x=>x.code===PROGRAMME);
+  $("#title").textContent=(pr?pr.name:PROGRAMME)+" — Registration Advisor";
+  STUDENTS=await (await fetch("/api/students"+pq())).json();
+  CURRENT=null; DETAIL=null; QUEUE=null; ADMIN=null;
+  renderSide();
+  $("#main").innerHTML='<div class="empty">Pick a student to see their standing, grades, and advice.</div>';
+}
+async function switchProgramme(code){ PROGRAMME=code; MODE="advisor";
+  for(const x of ["advisor","queue","admin"]) $("#m-"+x).classList.toggle("on", x==="advisor");
+  await loadStudents(); }
+
+/* ---- upload ---- */
+function openUpload(){ $("#u-code").value=PROGRAMME||""; $("#u-msg").textContent=""; $("#upl").showModal(); }
+async function doUpload(){
+  const f=$("#u-file").files[0], code=$("#u-code").value.trim();
+  if(!code||!f){ $("#u-msg").textContent="Programme code and a file are required."; return; }
+  const fd=new FormData();
+  fd.append("programme",code); fd.append("name",$("#u-name").value.trim());
+  fd.append("yaml",$("#u-yaml").value.trim()); fd.append("file",f);
+  $("#u-go").disabled=true; $("#u-msg").textContent="Reading "+f.name+"…";
+  try{
+    const r=await (await fetch("/api/ingest",{method:"POST",body:fd})).json();
+    if(r.error){ $("#u-msg").textContent="Failed: "+r.error; }
+    else{
+      $("#u-msg").textContent=`Ingested ${r.n_results} results, ${r.n_decisions} decisions for ${r.n_students} students.`;
+      await boot(); PROGRAMME=code; $("#progpick").value=code; await loadStudents();
+      setTimeout(()=>$("#upl").close(),900);
+    }
+  }catch(e){ $("#u-msg").textContent="Failed: "+e; }
+  $("#u-go").disabled=false;
+}
 
 function switchMode(m){
   MODE=m;
@@ -133,13 +202,13 @@ async function renderSide(){
   if(MODE==="advisor"){ renderStudentList(""); return; }
   if(MODE==="queue"){
     if(!QUEUE){
-      const [q,dec]=await Promise.all([(await fetch("/api/triage")).json(),(await fetch("/api/decisions")).json()]);
+      const [q,dec]=await Promise.all([(await fetch("/api/triage"+pq())).json(),(await fetch("/api/decisions")).json()]);
       QUEUE=q; dec.forEach(d=>DEC[key(d.sn,d.code)]={decision:d.decision,note:d.note,date:d.date});
     }
     renderQueue(); return;
   }
   if(MODE==="admin"){
-    if(!ADMIN) ADMIN=await (await fetch("/api/admin")).json();
+    if(!ADMIN) ADMIN=await (await fetch("/api/admin"+pq())).json();
     renderAdminSide(); renderAdminMain();
   }
 }
@@ -225,12 +294,12 @@ function renderAdminMain(){
       <td>${esc(r.note||"")}</td></tr>`).join("")}</tbody></table></div>`;
 }
 async function saveAdmin(){
-  const r=await (await fetch("/api/admin/export",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})).json();
+  const r=await (await fetch("/api/admin/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({programme:PROGRAMME})})).json();
   $("#saved").textContent=`Saved ${r.count} lines to ${r.path}`;
 }
 
 /* ---- detail ---- */
-async function pick(sn){ CURRENT=sn; renderSide(); DETAIL=await (await fetch("/api/students/"+sn)).json(); render(); }
+async function pick(sn){ CURRENT=sn; renderSide(); DETAIL=await (await fetch("/api/students/"+sn+pq())).json(); render(); }
 
 function gradePill(m,passed){ return m.mark==null?"":`<span class="grade ${passed?"pass":""}" title="best mark">${R(m.mark)}</span>`; }
 function carryPill(m){
@@ -260,7 +329,7 @@ async function decide(code,decision){
   const el=document.getElementById("note-"+code);
   const note=el?el.value.trim():"";
   await fetch("/api/decide",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({sn:CURRENT,code,decision,note})});
+    body:JSON.stringify({programme:PROGRAMME,sn:CURRENT,code,decision,note})});
   DEC[key(CURRENT,code)]={decision,note,date:today()};
   ADMIN=null;                       // admin list will refresh on next open
   render(); if(MODE==="queue") renderQueue();
@@ -268,6 +337,17 @@ async function decide(code,decision){
 
 function render(){
   const d=DETAIL,b=d.bio,off=d.official,en=d.engine;
+  if(d.advice_ready===false){
+    $("#main").innerHTML=`<div class="card">
+      <div class="name">${esc(b.surname)}, ${esc(b.name)}</div>
+      <div class="sn">${esc(b.sn)} · ${esc(b.plan_code||"")}</div></div>
+      <div class="card"><h2>Academic standing</h2>
+        <span class="badge ${BADGE[off.status]}">${esc(off.code||"—")} · ${esc(off.status)}</span>
+        <div class="note">${esc(off.text||"No intervention proposed — continuing.")}</div></div>
+      <div class="flag warn">Prerequisite advice for this programme waits on its rule file.
+        Standing from the ERS is shown; add the programme's YAML to switch advice on.</div>`;
+    return;
+  }
   const cap=d.cap==null?"no cap":(d.cap+" cr");
   const agree=d.agree?`<div class="flag ok">Registrar and engine agree on standing.</div>`
     :`<div class="flag warn">Engine re-derivation differs from the registrar
