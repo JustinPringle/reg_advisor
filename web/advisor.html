@@ -17,7 +17,6 @@
   header{padding:12px 22px;border-bottom:1px solid var(--line);background:var(--card);
          display:flex;align-items:center;gap:14px}
   header h1{font-size:16px;font-weight:600;margin:0}
-  header .sub{font-size:12px;color:var(--muted)}
   header .tag{margin-left:auto;font-size:11px;color:var(--muted);border:1px solid var(--line);
               border-radius:20px;padding:3px 10px}
   .modes{display:flex;gap:4px;margin-left:8px}
@@ -26,7 +25,7 @@
   .modebtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
   .wrap{display:grid;grid-template-columns:300px 1fr;height:calc(100vh - 50px)}
   aside{border-right:1px solid var(--line);background:var(--card);overflow-y:auto;padding:12px}
-  aside input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:10px}
+  aside input.search{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:10px}
   .stu{padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:14px}
   .stu:hover{background:var(--bg)} .stu.on{background:var(--blue-bg)}
   .stu .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -35,7 +34,7 @@
   .dot.green{background:var(--green)} .dot.orange{background:var(--amber)}
   .dot.red{background:var(--red)} .dot.exclude{background:#5b1010} .dot.unknown,.dot.none{background:#b8b6ad}
   .qhead{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:10px 2px 6px}
-  .qfilter{display:flex;gap:6px;margin-bottom:8px}
+  .qfilter{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
   .qfilter button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--bg);
                   color:var(--muted);border-radius:20px;padding:2px 10px;cursor:pointer}
   .qfilter button.on{background:var(--blue-bg);border-color:var(--blue);color:var(--blue)}
@@ -64,32 +63,37 @@
   .bucket{margin-bottom:14px}
   .bucket .head{font-size:13px;font-weight:600;margin-bottom:7px;display:flex;align-items:center;gap:8px}
   .count{font-size:11px;font-weight:600;border-radius:20px;padding:1px 8px}
-  .mod{display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line)}
+  .mod{display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
   .mod:last-child{border-bottom:none}
   .mod code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--bg);
             border:1px solid var(--line);border-radius:5px;padding:1px 6px}
-  .mod .mn{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mod .mn{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:120px}
   .mod .cr{font-size:12px;color:var(--muted)}
   .grade{font-size:12px;font-weight:600;border-radius:6px;padding:1px 7px;background:var(--gray-bg);color:var(--gray)}
   .grade.pass{background:var(--green-bg);color:var(--green)}
   .carry{font-size:12px;color:var(--amber);background:var(--amber-bg);border-radius:6px;padding:1px 7px}
   .miss{font-size:12px;color:var(--red)}
-  .qbtns{display:flex;gap:6px}
+  .qbtns{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .qbtns input.note{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:3px 8px;width:150px}
   .qbtns button{font:inherit;font-size:12px;border-radius:7px;padding:3px 10px;cursor:pointer;border:1px solid}
   .approve{background:var(--green-bg);border-color:var(--green);color:var(--green)}
   .escalate{background:var(--card);border-color:var(--line);color:var(--muted)}
   .decided{font-size:12px;font-weight:600;border-radius:20px;padding:2px 10px}
   .decided.approved{background:var(--green-bg);color:var(--green)}
   .decided.escalated{background:var(--amber-bg);color:var(--amber)}
-  .builder label{display:flex;align-items:center;gap:10px;width:100%;cursor:pointer}
-  .tally{display:flex;align-items:center;gap:14px;margin:12px 0;font-size:14px}
-  .tally .n{font-size:20px;font-weight:600} .tally .over{color:var(--red)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+     padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  td code{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .lane{font-size:11px;font-weight:600;border-radius:20px;padding:1px 8px;white-space:nowrap}
+  .lane.register{background:var(--green-bg);color:var(--green)}
+  .lane.concession-auto{background:var(--blue-bg);color:var(--blue)}
+  .lane.concession-approved{background:var(--amber-bg);color:var(--amber)}
+  .savebar{display:flex;align-items:center;gap:12px;margin-bottom:14px}
   button.primary{font:inherit;font-size:14px;font-weight:500;border:1px solid var(--accent);background:var(--accent);
          color:#fff;border-radius:8px;padding:8px 16px;cursor:pointer}
-  button.primary:disabled{opacity:.5;cursor:default}
-  .verdict{display:flex;align-items:center;gap:10px;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line)}
-  .v-CLEARED{color:var(--green);font-weight:600} .v-REVIEW{color:var(--amber);font-weight:600}
-  .verdict .rz{color:var(--muted);flex:1}
+  .saved{font-size:12px;color:var(--green)}
 </style>
 </head>
 <body>
@@ -98,6 +102,7 @@
   <div class="modes">
     <button class="modebtn on" id="m-advisor" onclick="switchMode('advisor')">Advisor</button>
     <button class="modebtn" id="m-queue" onclick="switchMode('queue')">Concession queue</button>
+    <button class="modebtn" id="m-admin" onclick="switchMode('admin')">Admin worklist</button>
   </div>
   <span class="tag">Local · POPIA-contained</span>
 </header>
@@ -109,79 +114,76 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let MODE="advisor", STUDENTS=[], QUEUE=null, DEC={}, QFILTER="pending", CURRENT=null, DETAIL=null;
+let MODE="advisor", STUDENTS=[], QUEUE=null, ADMIN=null, DEC={}, QFILTER="pending", AFILTER="all", CURRENT=null, DETAIL=null;
 const BADGE={green:"b-green",orange:"b-orange",red:"b-red",exclude:"b-exclude",none:"b-gray",unknown:"b-gray"};
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const R=x=>Math.round(x);
 const key=(sn,code)=>sn+"|"+code;
+const today=()=>new Date().toISOString().slice(0,10);
 
-async function boot(){
-  STUDENTS = await (await fetch("/api/students")).json();
-  renderSide();
-}
+async function boot(){ STUDENTS=await (await fetch("/api/students")).json(); renderSide(); }
 
 function switchMode(m){
   MODE=m;
-  $("#m-advisor").classList.toggle("on", m==="advisor");
-  $("#m-queue").classList.toggle("on", m==="queue");
+  for(const x of ["advisor","queue","admin"]) $("#m-"+x).classList.toggle("on", m===x);
   renderSide();
 }
 
 async function renderSide(){
   if(MODE==="advisor"){ renderStudentList(""); return; }
-  if(!QUEUE){
-    const [q, dec] = await Promise.all([
-      (await fetch("/api/triage")).json(),
-      (await fetch("/api/decisions")).json()]);
-    QUEUE=q; dec.forEach(d=>DEC[key(d.sn,d.code)]=d.decision);
+  if(MODE==="queue"){
+    if(!QUEUE){
+      const [q,dec]=await Promise.all([(await fetch("/api/triage")).json(),(await fetch("/api/decisions")).json()]);
+      QUEUE=q; dec.forEach(d=>DEC[key(d.sn,d.code)]={decision:d.decision,note:d.note,date:d.date});
+    }
+    renderQueue(); return;
   }
-  renderQueue();
+  if(MODE==="admin"){
+    if(!ADMIN) ADMIN=await (await fetch("/api/admin")).json();
+    renderAdminSide(); renderAdminMain();
+  }
 }
 
 /* ---- advisor sidebar ---- */
 function renderStudentList(q){
-  const rows = STUDENTS.filter(s=>!q||s.name.toLowerCase().includes(q)||s.sn.includes(q));
-  $("#side").innerHTML = `<input id="search" placeholder="Search name or student number…" autocomplete="off">
-    <div id="list"></div>`;
+  const rows=STUDENTS.filter(s=>!q||s.name.toLowerCase().includes(q)||s.sn.includes(q));
+  $("#side").innerHTML=`<input class="search" id="search" placeholder="Search name or student number…" autocomplete="off"><div id="list"></div>`;
   $("#search").value=q;
-  $("#search").addEventListener("input", e=>{
+  $("#search").addEventListener("input",e=>{
     const v=e.target.value.trim().toLowerCase();
-    $("#list").innerHTML = listHtml(STUDENTS.filter(s=>!v||s.name.toLowerCase().includes(v)||s.sn.includes(v)));
+    $("#list").innerHTML=listHtml(STUDENTS.filter(s=>!v||s.name.toLowerCase().includes(v)||s.sn.includes(v)));
   });
-  $("#list").innerHTML = listHtml(rows);
+  $("#list").innerHTML=listHtml(rows);
 }
 function listHtml(rows){
   return rows.map(s=>`<div class="stu ${s.sn===CURRENT?"on":""}" onclick="pick('${s.sn}')">
     <span class="dot ${s.official}" title="registrar: ${s.official}"></span>
     <span class="nm">${esc(s.name)||s.sn}</span>
     ${s.agree?"":'<span title="engine differs" style="color:#854f0b;font-size:12px">≠</span>'}
-    <span class="yr">${s.year?("Y"+R(s.year)):""}</span></div>`).join("")
-    || '<div class="empty">No match.</div>';
+    <span class="yr">${s.year?("Y"+R(s.year)):""}</span></div>`).join("") || '<div class="empty">No match.</div>';
 }
 
-/* ---- queue sidebar (concessions to decide) ---- */
-function pendingConcessions(){
-  return (QUEUE.academic||[]).filter(r=>r.kind==="concession");
-}
+/* ---- concession queue sidebar ---- */
+function pendingConcessions(){ return (QUEUE.academic||[]).filter(r=>r.kind==="concession"); }
 function renderQueue(){
-  const all = pendingConcessions();
-  const pending = all.filter(r=>!DEC[key(r.student_number,r.module_code)]);
-  const show = QFILTER==="pending" ? pending : all;
-  const autoN = (QUEUE.auto||[]).length;
-  $("#side").innerHTML = `
+  const all=pendingConcessions();
+  const pending=all.filter(r=>!DEC[key(r.student_number,r.module_code)]);
+  const show=QFILTER==="pending"?pending:all;
+  const autoN=(QUEUE.auto||[]).length;
+  $("#side").innerHTML=`
     <div class="qhead">Concessions needing a decision</div>
     <div class="qfilter">
       <button class="${QFILTER==="pending"?"on":""}" onclick="setQFilter('pending')">Pending ${pending.length}</button>
       <button class="${QFILTER==="all"?"on":""}" onclick="setQFilter('all')">All ${all.length}</button>
     </div>
-    <div id="qlist">${show.map(qrow).join("") || '<div class="empty">Nothing pending — queue clear.</div>'}</div>
+    <div id="qlist">${show.map(qrow).join("")||'<div class="empty">Nothing pending — queue clear.</div>'}</div>
     <div class="qhead" style="margin-top:16px">Auto-cleared to admin</div>
     <div style="font-size:12px;color:var(--muted);padding:0 2px">
       ${autoN} routine concession${autoN===1?"":"s"} cleared under the auto-rule — already on the admin worklist.</div>`;
 }
 function qrow(r){
-  const d = DEC[key(r.student_number,r.module_code)];
-  const tag = d?`<span class="decided ${d}">${d}</span>`:`<span class="badge b-orange">${r.score}</span>`;
+  const d=DEC[key(r.student_number,r.module_code)];
+  const tag=d?`<span class="decided ${d.decision}">${d.decision}</span>`:`<span class="badge b-orange">${r.score}</span>`;
   return `<div class="qrow ${CURRENT===r.student_number?"on":""}" onclick="pick('${r.student_number}')">
     <div class="top"><span class="nm">${esc(r.name)||r.student_number}</span>
       <code>${esc(r.module_code)}</code>${tag}</div>
@@ -189,45 +191,78 @@ function qrow(r){
 }
 function setQFilter(f){ QFILTER=f; renderQueue(); }
 
-/* ---- detail ---- */
-async function pick(sn){
-  CURRENT=sn; renderSide();
-  DETAIL = await (await fetch("/api/students/"+sn)).json();
-  render();
+/* ---- admin worklist ---- */
+function renderAdminSide(){
+  const rows=ADMIN.rows||[];
+  const n=l=>rows.filter(r=>r.lane===l).length;
+  const chip=(f,label,c)=>`<button class="${AFILTER===f?"on":""}" onclick="setAFilter('${f}')">${label} ${c}</button>`;
+  $("#side").innerHTML=`
+    <button class="primary" style="width:100%" onclick="saveAdmin()">Save to data/admin_worklist.csv</button>
+    <div class="saved" id="saved" style="margin:8px 2px 14px"></div>
+    <div class="qhead">Filter</div>
+    <div class="qfilter">
+      ${chip("all","All",rows.length)}
+      ${chip("concession-approved","Approved",n("concession-approved"))}
+      ${chip("concession-auto","Auto",n("concession-auto"))}
+      ${chip("register","Registrations",n("register"))}
+    </div>
+    <div style="font-size:12px;color:var(--muted);padding:0 2px">
+      Everything here is cleared for admin to process: plain registrations, auto-cleared
+      concessions, and the concessions you approved.</div>`;
+}
+function setAFilter(f){ AFILTER=f; renderAdminMain(); }
+function renderAdminMain(){
+  const rows=(ADMIN.rows||[]).filter(r=>AFILTER==="all"||r.lane===AFILTER);
+  $("#main").innerHTML=`<div class="card">
+    <div class="savebar"><h2 style="margin:0">Admin worklist · ${rows.length} lines</h2></div>
+    <table><thead><tr><th>Student</th><th>Module</th><th>Cr</th><th>Lane</th><th>Basis</th><th>Note</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td>${esc(r.name)||r.student_number}<br><span style="color:var(--muted)">${esc(r.student_number)}</span></td>
+      <td><code>${esc(r.module_code)}</code><br><span style="color:var(--muted)">${esc(r.module_name)}</span></td>
+      <td>${r.credits||0}</td>
+      <td><span class="lane ${r.lane}">${esc(r.lane)}</span></td>
+      <td style="color:var(--muted)">${esc(r.basis)}</td>
+      <td>${esc(r.note||"")}</td></tr>`).join("")}</tbody></table></div>`;
+}
+async function saveAdmin(){
+  const r=await (await fetch("/api/admin/export",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})).json();
+  $("#saved").textContent=`Saved ${r.count} lines to ${r.path}`;
 }
 
-function gradePill(m, passed){
-  if(m.mark==null) return "";
-  return `<span class="grade ${passed?"pass":""}" title="best mark">${R(m.mark)}</span>`;
-}
+/* ---- detail ---- */
+async function pick(sn){ CURRENT=sn; renderSide(); DETAIL=await (await fetch("/api/students/"+sn)).json(); render(); }
+
+function gradePill(m,passed){ return m.mark==null?"":`<span class="grade ${passed?"pass":""}" title="best mark">${R(m.mark)}</span>`; }
 function carryPill(m){
   const c=(m.prereq_marks||[]).filter(p=>p.mark!=null).map(p=>`${esc(p.code)} ${R(p.mark)}`).join(", ");
   return c?`<span class="carry" title="mark carried in the prerequisite">carried ${c}</span>`:"";
 }
-function decideBtns(m){
-  const d = DEC[key(CURRENT,m.code)];
-  if(d) return `<span class="decided ${d}">${d}</span>`;
+function decideRow(m){
+  const d=DEC[key(CURRENT,m.code)];
+  if(d) return `<span class="decided ${d.decision}">${d.decision}${d.note?" · "+esc(d.note):""}</span>`;
   return `<span class="qbtns">
+    <input class="note" id="note-${esc(m.code)}" placeholder="note (optional)">
     <button class="approve" onclick="decide('${m.code}','approved')">Approve</button>
     <button class="escalate" onclick="decide('${m.code}','escalated')">Escalate</button></span>`;
 }
-function modLine(m, opts){
+function modLine(m,opts){
   const miss=(opts.withMiss&&m.unmet&&m.unmet.length)?`<span class="miss">needs ${m.unmet.map(esc).join(", ")}</span>`:"";
-  const tail = opts.decide ? decideBtns(m) : `<span class="cr">${m.credits||0}cr</span>`;
+  const tail=opts.decide?decideRow(m):`<span class="cr">${m.credits||0}cr</span>`;
   return `<div class="mod"><code>${esc(m.code)}</code><span class="mn">${esc(m.name)}</span>
     ${opts.concession?carryPill(m):""}${miss}${gradePill(m,opts.passed)}${tail}</div>`;
 }
 function bucket(title,k,cls,opts){
   const rows=DETAIL.advice[k]||[]; if(!rows.length) return "";
-  return `<div class="bucket"><div class="head">${title}
-    <span class="count ${cls}">${rows.length}</span></div>
+  return `<div class="bucket"><div class="head">${title}<span class="count ${cls}">${rows.length}</span></div>
     ${rows.map(m=>modLine(m,opts)).join("")}</div>`;
 }
-
-async function decide(code, decision){
+async function decide(code,decision){
+  const el=document.getElementById("note-"+code);
+  const note=el?el.value.trim():"";
   await fetch("/api/decide",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({sn:CURRENT, code, decision})});
-  DEC[key(CURRENT,code)]=decision;
+    body:JSON.stringify({sn:CURRENT,code,decision,note})});
+  DEC[key(CURRENT,code)]={decision,note,date:today()};
+  ADMIN=null;                       // admin list will refresh on next open
   render(); if(MODE==="queue") renderQueue();
 }
 
@@ -261,8 +296,7 @@ function render(){
         <div class="note">${esc(off.text||"No intervention proposed — continuing.")}</div></div>
       <div class="col"><div class="lbl">Engine cross-check</div>
         <span class="badge ${BADGE[en.status]}">${esc(en.status)}</span>
-        <div class="note">cumulative ${en.cumulative_pct}% · latest semester
-          ${en.semester_pct}% (${esc(en.period)})</div></div>
+        <div class="note">cumulative ${en.cumulative_pct}% · latest semester ${en.semester_pct}% (${esc(en.period)})</div></div>
     </div>${agree}
   </div>
 
@@ -270,7 +304,7 @@ function render(){
     ${DETAIL.advice.concession_possible.length
       ? `<p style="font-size:13px;color:var(--muted);margin:0 0 10px">
           Near-misses: average ≥ 55, one requirement short, prerequisite carried above 45.
-          Approve to send to admin, or escalate.</p>
+          Add a note if you like, then approve to send to admin, or escalate.</p>
         ${bucket("","concession_possible","b-orange",{withMiss:true,concession:true,decide:true})}`
       : `<p style="font-size:13px;color:var(--muted);margin:0">No concession applies — this student
           meets every prerequisite outright or falls short of the carry rule.</p>`}

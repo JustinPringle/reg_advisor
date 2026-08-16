@@ -29,6 +29,7 @@ from triage import triage_queue, demo_apps, read_apps, CONCESSION_AUTOCLEAR
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "web" / "advisor.html"
 DECISIONS = ROOT / "data" / "decisions.csv"
+ADMIN_FILE = ROOT / "data" / "admin_worklist.csv"
 APPS = ROOT / "data" / "applications.csv"
 HOST, PORT = "127.0.0.1", 8000
 
@@ -82,6 +83,42 @@ def annotate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def admin_rows() -> list[dict[str, Any]]:
+    """The admin handoff: everything auto-cleared (registrations and auto
+    concessions) plus every concession the academic approved in the browser."""
+    q = build_queue()
+    today = date.today().isoformat()
+    rows = []
+    for r in q["admin"]:
+        rows.append({"student_number": r["student_number"], "name": r["name"],
+                     "module_code": r["module_code"], "module_name": r["module_name"],
+                     "credits": r["credits"], "lane": r["lane"],
+                     "basis": r["reason"], "note": "", "decided": today})
+    acad = {(r["student_number"], r["module_code"]): r for r in q["academic"]}
+    for (sn, code), d in DEC.items():
+        if d["decision"] != "approved":
+            continue
+        ar = acad.get((sn, code))
+        if not ar:
+            continue
+        rows.append({"student_number": sn, "name": ar["name"], "module_code": code,
+                     "module_name": ar["module_name"], "credits": ar["credits"],
+                     "lane": "concession-approved", "basis": "approved by academic",
+                     "note": d.get("note", ""), "decided": d.get("date", today)})
+    order = {"concession-approved": 0, "concession-auto": 1, "register": 2}
+    rows.sort(key=lambda r: (order.get(r["lane"], 3), r["name"]))
+    return rows
+
+
+def write_admin(rows: list[dict[str, Any]]) -> None:
+    fields = ["student_number", "name", "module_code", "module_name", "credits",
+              "lane", "basis", "note", "decided"]
+    with open(ADMIN_FILE, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
@@ -106,6 +143,9 @@ class Handler(BaseHTTPRequestHandler):
                         "auto": annotate(auto), "summary": q["summary"]})
         elif path == "/api/decisions":
             self._json([{"sn": k[0], "code": k[1], **v} for k, v in DEC.items()])
+        elif path == "/api/admin":
+            rows = admin_rows()
+            self._json({"rows": rows, "count": len(rows)})
         elif path.startswith("/api/students/"):
             sn = path.rsplit("/", 1)[-1]
             data = SOURCE.get_student(sn)
@@ -132,6 +172,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             record_decision(sn, code, decision, str(req.get("note", "")))
             self._json({"ok": True, "decided": len(DEC)})
+        elif path == "/api/admin/export":
+            rows = admin_rows()
+            write_admin(rows)
+            self._json({"ok": True, "path": str(ADMIN_FILE.relative_to(ROOT)),
+                        "count": len(rows)})
         else:
             self._json({"error": "not found"}, 404)
 
