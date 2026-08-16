@@ -118,8 +118,8 @@ def triage_student(cur: dict[str, Any], rows: list[dict[str, Any]],
         b = bucket.get(code)
 
         if v["verdict"] == "CLEARED":
-            out.append({**base, "lane": "register", "action": "register",
-                        "reason": "prereqs met, within cap"})
+            out.append({**base, "lane": "register", "kind": "clean",
+                        "action": "register", "reason": "prereqs met, within cap"})
             continue
         if b == "concession_possible":
             missing = next((m["prereq_check"]["missing"]
@@ -127,17 +127,16 @@ def triage_student(cur: dict[str, Any], rows: list[dict[str, Any]],
                             if m["code"] == code), [])
             ok, why = autoclear(code, tx, missing, ers["status"], over_cap, rule)
             if ok:
-                out.append({**base, "lane": "concession-auto",
+                out.append({**base, "lane": "concession-auto", "kind": "concession",
                             "action": "register (concession)", "reason": why})
                 continue
             ev = concession_evidence(cur, tx, code)
-            out.append({**base, "lane": "academic", "action": "decide",
-                        "ers_status": ers["status"], "score": ev["score"],
-                        "reason": v["reason"]})
+            out.append({**base, "lane": "academic", "kind": "concession",
+                        "action": "decide", "ers_status": ers["status"],
+                        "score": ev["score"], "reason": v["reason"]})
             continue
-        out.append({**base, "lane": "academic", "action": "decide",
-                    "ers_status": ers["status"], "score": "",
-                    "reason": v["reason"]})
+        out.append({**base, "lane": "academic", "kind": "blocked", "action": "decide",
+                    "ers_status": ers["status"], "score": "", "reason": v["reason"]})
     return out
 
 

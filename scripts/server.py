@@ -2,31 +2,84 @@
 """
 server.py -- the local advisor, standard library only.
 
-Serves one page and three JSON routes from one origin on localhost, so there is
-nothing to install and no cross-origin setup. All student data stays on this
-machine; the server never calls out.
+Serves one page and the JSON API from one origin on localhost. All student data
+stays on this machine; the server never calls out.
 
     GET  /                     the advisor page
     GET  /api/students         picker list
-    GET  /api/students/<sn>    one student: profile, standing, advice buckets
+    GET  /api/students/<sn>    one student: profile, standing, advice + grades
     POST /api/check            {sn, codes:[...]} -> CLEARED / REVIEW per module
+    GET  /api/triage           the batched queue: auto-cleared + academic piles
+    GET  /api/decisions        decisions recorded so far
+    POST /api/decide           {sn, code, decision, note} -> record a decision
 
-Run from the scripts/ directory:
-    python server.py
-then open http://127.0.0.1:8000
+Run from scripts/:  python server.py    then open http://127.0.0.1:8000
 """
 from __future__ import annotations
+from typing import Any
+import csv
 import json
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from datasource import CsvSource
+from triage import triage_queue, demo_apps, read_apps, CONCESSION_AUTOCLEAR
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "web" / "advisor.html"
+DECISIONS = ROOT / "data" / "decisions.csv"
+APPS = ROOT / "data" / "applications.csv"
 HOST, PORT = "127.0.0.1", 8000
 
 SOURCE = CsvSource()   # swap for ItsSource() when the database is wired
+_QUEUE: dict[str, Any] | None = None
+
+
+def load_decisions() -> dict[tuple[str, str], dict[str, str]]:
+    d: dict[tuple[str, str], dict[str, str]] = {}
+    if DECISIONS.exists():
+        with open(DECISIONS, newline="", encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                d[(r["student_number"], r["module_code"])] = {
+                    "decision": r["decision"], "date": r.get("date", ""),
+                    "note": r.get("note", "")}
+    return d
+
+
+DEC = load_decisions()
+
+
+def record_decision(sn: str, code: str, decision: str, note: str) -> None:
+    new = not DECISIONS.exists()
+    with open(DECISIONS, "a", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        if new:
+            w.writerow(["student_number", "module_code", "decision", "date", "note"])
+        w.writerow([sn, code, decision, date.today().isoformat(), note])
+    DEC[(sn, code)] = {"decision": decision, "date": date.today().isoformat(), "note": note}
+
+
+def build_queue() -> dict[str, Any]:
+    global _QUEUE
+    if _QUEUE is None:
+        rule = (SOURCE.cur.get("rules") or {}).get("autoclear") or CONCESSION_AUTOCLEAR
+        if APPS.exists():
+            apps = read_apps(APPS)
+            names = {sn: f"{b.get('surname','')}, {b.get('name','')}".strip(", ")
+                     for sn, b in SOURCE.bio.items()}
+        else:
+            apps, names = demo_apps(SOURCE)
+        _QUEUE = triage_queue(SOURCE.cur, SOURCE.results, apps, names, rule)
+    return _QUEUE
+
+
+def annotate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for r in rows:
+        d = DEC.get((r["student_number"], r["module_code"]))
+        out.append({**r, "decision": d["decision"] if d else None})
+    return out
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -46,6 +99,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
         elif path == "/api/students":
             self._json(SOURCE.list_students())
+        elif path == "/api/triage":
+            q = build_queue()
+            auto = [r for r in q["admin"] if r["lane"] == "concession-auto"]
+            self._json({"academic": annotate(q["academic"]),
+                        "auto": annotate(auto), "summary": q["summary"]})
+        elif path == "/api/decisions":
+            self._json([{"sn": k[0], "code": k[1], **v} for k, v in DEC.items()])
         elif path.startswith("/api/students/"):
             sn = path.rsplit("/", 1)[-1]
             data = SOURCE.get_student(sn)
@@ -54,19 +114,28 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404)
 
     def do_POST(self) -> None:
-        if self.path.split("?")[0] != "/api/check":
-            self._json({"error": "not found"}, 404)
-            return
+        path = self.path.split("?")[0]
         length = int(self.headers.get("Content-Length") or 0)
         try:
             req = json.loads(self.rfile.read(length) or b"{}")
         except json.JSONDecodeError:
             self._json({"error": "bad json"}, 400)
             return
-        data = SOURCE.check(str(req.get("sn", "")), list(req.get("codes", [])))
-        self._json(data) if data else self._json({"error": "not found"}, 404)
+        if path == "/api/check":
+            data = SOURCE.check(str(req.get("sn", "")), list(req.get("codes", [])))
+            self._json(data) if data else self._json({"error": "not found"}, 404)
+        elif path == "/api/decide":
+            sn, code = str(req.get("sn", "")), str(req.get("code", ""))
+            decision = str(req.get("decision", ""))
+            if not (sn and code and decision):
+                self._json({"error": "sn, code, decision required"}, 400)
+                return
+            record_decision(sn, code, decision, str(req.get("note", "")))
+            self._json({"ok": True, "decided": len(DEC)})
+        else:
+            self._json({"error": "not found"}, 404)
 
-    def log_message(self, *args) -> None:   # quiet console
+    def log_message(self, *args) -> None:
         pass
 
 

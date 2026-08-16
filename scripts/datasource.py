@@ -24,6 +24,7 @@ from pathlib import Path
 from programme_loader import load_programme
 from data_loaders import load_results
 from advise import advise_student, check_additions
+import regadvisor_engine as R
 
 ROOT = Path(__file__).resolve().parents[1]
 YAML = ROOT / "programmes" / "civil.yaml"
@@ -126,11 +127,23 @@ class CsvSource:
                               if not r["result_code"] and r["mark"] is None
                               and r["course_code"]})
 
-        def slim(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            return [{"code": x["code"], "name": x.get("name", ""),
-                     "credits": x.get("credits", 0),
-                     "unmet": x.get("prereq_check", {}).get("unmet", [])}
-                    for x in rows]
+        def slim(bucket: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            out = []
+            for x in bucket:
+                b = R._best(tx, x["code"])
+                carry = []
+                for p in x.get("prereq_check", {}).get("missing", []):
+                    ps = str(p)
+                    if ps.startswith("review:") or ">=" in ps:
+                        continue
+                    pb = R._best(tx, ps)
+                    carry.append({"code": ps, "mark": pb["mark"] if pb else None})
+                out.append({"code": x["code"], "name": x.get("name", ""),
+                            "credits": x.get("credits", 0),
+                            "unmet": x.get("prereq_check", {}).get("unmet", []),
+                            "mark": b["mark"] if b else None,
+                            "prereq_marks": carry})
+            return out
 
         return {
             "bio": {**self.bio.get(sn, {"sn": sn}),
