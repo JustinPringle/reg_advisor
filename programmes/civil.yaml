@@ -6,7 +6,7 @@
 #
 # Term shapes (a module's `prereqs` is a list, AND-ed together):
 #   CODE                       course passed
-#   {code: X, min_mark: N}     passed AND best mark >= N
+#   {code: X, min_mark: N}     best mark >= N carries (a 40-49 carry; no full pass)
 #   {code: X, soft: true}      recommended only — never blocks
 #   {all: [...]}               every term holds
 #   {any: [...]}               at least one holds
@@ -19,12 +19,12 @@
 # `coreqs` are recorded for fidelity but the advice engine does not gate on them
 # (co-requisites are taken in the same semester). They document intent only.
 #
-# TWO SEMANTIC NOTES, both erring toward review (fail-safe) — see the decisions
-# list in the accompanying message; these want your sign-off:
+# SEMANTIC NOTES:
 #   * "(40%)" carries. The sheet lets a 40–49% result carry into the next module.
-#     The engine's min_mark requires a PASS (>=50) as well, so min_mark: 40 here
-#     behaves as "pass required" — stricter than the handbook. Kept as written.
-#   * "(DP)" prereqs. Encoded as a plain pass requirement (stricter than "has DP").
+#     Authored as {code: X, min_mark: 40}: a mark >= 40 satisfies the prereq, no
+#     full pass required. A bare code term still requires a pass (>=50).
+#   * "(DP)" prereqs. Encoded as a plain pass requirement (stricter than "has DP")
+#     — still open for your sign-off.
 
 programme:
   code: ENG-CIVIL

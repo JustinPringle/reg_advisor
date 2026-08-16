@@ -180,8 +180,19 @@ def eval_term(term: Any, tx: dict[str, Any]) -> dict[str, Any]:
                     "missing": [] if _has(tx, term["code"]) else [term["code"]]}
         b = _best(tx, term["code"])
         if term.get("min_mark") is not None:
-            ok = bool(b and b["passed"] and (b["mark"] is None or b["mark"] >= term["min_mark"]))
-            return {"met": ok, "soft": False, "label": f"{term['code']}>={term['min_mark']}",
+            mm = term["min_mark"]
+            # min_mark is a CARRY threshold: scoring at or above it satisfies the
+            # prerequisite even without a full pass (the 40-49 carry the handbook
+            # allows). A recorded pass with no mark also counts. A bare code term
+            # -- one with no min_mark -- still requires a full pass; author a
+            # min_mark to permit a carry.
+            if b is None:
+                ok = False
+            elif b["mark"] is not None:
+                ok = b["mark"] >= mm
+            else:
+                ok = b["passed"]
+            return {"met": ok, "soft": False, "label": f"{term['code']}>={mm}",
                     "missing": [] if ok else [term["code"]]}
         ok = _has(tx, term["code"])
         return {"met": ok, "soft": False, "label": term["code"],
