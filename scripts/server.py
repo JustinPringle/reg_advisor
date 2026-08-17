@@ -33,8 +33,11 @@ from pathlib import Path
 from store import Store
 from datasource_sqlite import SqliteSource, list_programmes
 from ingest_ers import ingest_path
+from ers_ingest import parse_file
 from multipart import parse_multipart
 from triage import triage_queue, demo_apps, CONCESSION_AUTOCLEAR
+from programme_catalogue import catalogue, resolve
+import checks_service as CHK
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "web" / "advisor.html"
@@ -42,6 +45,7 @@ DB = ROOT / "data" / "advisor.db"
 UPLOADS = ROOT / "data" / "uploads"
 DECISIONS = ROOT / "data" / "decisions.csv"
 ADMIN_DIR = ROOT / "data"
+PROGRAMMES_DIR = ROOT / "programmes"     # the folder the picker reads
 HOST, PORT = "127.0.0.1", 8000
 
 STORE = Store(str(DB))
@@ -164,6 +168,16 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/programmes":
             progs = list_programmes(STORE)
             self._json({"programmes": progs, "current": progs[0]["code"] if progs else None})
+        elif path == "/api/programme_files":
+            # The programmes on offer in the folder -- what the upload picker shows.
+            self._json({"programmes": catalogue(PROGRAMMES_DIR)})
+        elif path == "/api/documents":
+            self._json({"documents": STORE.documents(self._q("programme"))})
+        elif path == "/api/completion":
+            self._json(CHK.completion(STORE, self._q("programme")))
+        elif path == "/api/erscheck":
+            self._json(CHK.ers_check(STORE, self._q("programme"),
+                                     self._q("source", "final")))
         elif path == "/api/students":
             src = source(self._q("programme"))
             self._json(src.list_students() if src else {"error": "unknown programme"},
@@ -221,6 +235,22 @@ class Handler(BaseHTTPRequestHandler):
             rows = admin_rows(programme)
             out = write_admin(programme, rows)
             self._json({"ok": True, "path": str(out.relative_to(ROOT)), "count": len(rows)})
+        elif path == "/api/completion/export":
+            programme = str(req.get("programme", "")) or self._q("programme")
+            comp = CHK.completion(STORE, programme)
+            from completion import export_completion
+            dg = export_completion(comp["DG"], str(ADMIN_DIR / f"degree_complete_{programme}.csv"))
+            dgor = export_completion(comp["DGOR"], str(ADMIN_DIR / f"vac_only_{programme}.csv"), dgor=True)
+            self._json({"ok": True, "DG": {"path": str(dg.relative_to(ROOT)), "count": len(comp["DG"])},
+                        "DGOR": {"path": str(dgor.relative_to(ROOT)), "count": len(comp["DGOR"])}})
+        elif path == "/api/erscheck/export":
+            programme = str(req.get("programme", "")) or self._q("programme")
+            source = str(req.get("source", "")) or self._q("source", "final")
+            rep = CHK.ers_check(STORE, programme, source)
+            from ers_check import export_mismatches
+            out = export_mismatches(rep, str(ADMIN_DIR / f"ers_mismatches_{programme}_{source}.csv"))
+            self._json({"ok": True, "source": source, "path": str(out.relative_to(ROOT)),
+                        "count": rep.get("summary", {}).get("mismatch", 0)})
         else:
             self._json({"error": "not found"}, 404)
 
@@ -230,18 +260,43 @@ class Handler(BaseHTTPRequestHandler):
         if not programme or "file" not in files:
             self._json({"error": "programme and file required"}, 400)
             return
+        # The picker sends a programme code; the catalogue supplies its name and
+        # rule file, so nothing but the code and the PDF is typed at upload time.
+        # An explicit name/yaml still overrides, for a programme not yet foldered.
+        entry = resolve(programme, PROGRAMMES_DIR) or {}
+        name = fields.get("name", "").strip() or entry.get("name", "")
+        yaml = fields.get("yaml", "").strip() or entry.get("yaml_path", "")
+        kind = (fields.get("kind", "final").strip().lower() or "final")
+        if kind not in ("initial", "final"):
+            kind = "final"
+
         filename, data = files["file"]
         UPLOADS.mkdir(parents=True, exist_ok=True)
-        dest = UPLOADS / f"{programme}__{filename}"
+        dest = UPLOADS / f"{programme}__{kind}__{filename}"
         dest.write_bytes(data)
+        STORE.add_document(programme, kind, filename, str(dest))
+
         try:
-            counts = ingest_path(STORE, str(dest), programme,
-                                 fields.get("name", "").strip(), fields.get("yaml", "").strip())
+            if kind == "final":
+                # The captured record: upsert into the main tables.
+                counts = ingest_path(STORE, str(dest), programme, name, yaml)
+            else:
+                # An initial run is kept only to check -- registered as a
+                # programme so its rules bind, parsed for a row count, but NOT
+                # written to the results/decisions tables. Only the final is stored.
+                STORE.register_programme(programme, name, yaml)
+                suffix = Path(dest).suffix.lower()
+                parsed = ({"students": [], "results": [], "decisions": []}
+                          if suffix == ".csv" else parse_file(str(dest), programme))
+                counts = {"n_students": len(parsed["students"]),
+                          "n_results": len(parsed["results"]),
+                          "n_decisions": len(parsed["decisions"])}
         except Exception as exc:                       # never crash the server on a bad upload
             self._json({"error": f"ingest failed: {exc}"}, 400)
             return
         refresh(programme)
-        self._json({"ok": True, "programme": programme, **counts})
+        self._json({"ok": True, "programme": programme, "kind": kind,
+                    "stored": kind == "final", **counts})
 
     def log_message(self, *args) -> None:
         pass

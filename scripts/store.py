@@ -76,6 +76,15 @@ CREATE TABLE IF NOT EXISTS ingests (
     n_decisions INTEGER,
     at          TEXT
 );
+CREATE TABLE IF NOT EXISTS documents (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    programme   TEXT,
+    kind        TEXT,          -- 'initial' (pre-check ERS run) or 'final' (captured)
+    filename    TEXT,
+    stored_path TEXT,
+    is_current  INTEGER,       -- 1 = the current document of its kind for the programme
+    at          TEXT
+);
 """
 
 
@@ -204,6 +213,14 @@ class Store:
             out.setdefault(r["student_number"], []).append(dict(r))
         return out
 
+    def decisions(self, programme: str) -> list[dict[str, Any]]:
+        """Every term-decision row for a programme (all periods, all students)."""
+        rows = self.db.execute(
+            "SELECT student_number, calendar_year, semester, term_code, term_text"
+            " FROM term_decisions WHERE programme=?"
+            " ORDER BY student_number, calendar_year, semester", (programme,)).fetchall()
+        return [dict(r) for r in rows]
+
     def latest_decisions(self, programme: str) -> dict[str, dict[str, Any]]:
         """Newest term-decision row per student, by (year, semester)."""
         rows = self.db.execute(
@@ -219,6 +236,40 @@ class Store:
                               "text": r["term_text"] or "",
                               "calendar_year": r["calendar_year"], "semester": r["semester"]}
         return latest
+
+    # -- documents (initial vs final ERS PDFs) -------------------------------
+    def add_document(self, programme: str, kind: str, filename: str,
+                     stored_path: str) -> int:
+        """Record an uploaded ERS PDF and make it the current one of its kind.
+
+        kind is 'initial' (the raw ERS run, kept only to check) or 'final' (the
+        captured record). Only one document of each kind is current per
+        programme; older ones stay on file but lose the current flag, so the
+        history is auditable while `current_document` always returns the latest.
+        """
+        kind = (kind or "final").strip().lower()
+        with self._lock:
+            self.db.execute(
+                "UPDATE documents SET is_current=0 WHERE programme=? AND kind=?",
+                (programme, kind))
+            cur = self.db.execute(
+                "INSERT INTO documents(programme, kind, filename, stored_path, is_current, at)"
+                " VALUES(?,?,?,?,1,?)",
+                (programme, kind, filename, stored_path, _now()))
+            self.db.commit()
+            return int(cur.lastrowid)
+
+    def documents(self, programme: str) -> list[dict[str, Any]]:
+        rows = self.db.execute(
+            "SELECT id, kind, filename, stored_path, is_current, at FROM documents"
+            " WHERE programme=? ORDER BY at DESC", (programme,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def current_document(self, programme: str, kind: str) -> dict[str, Any] | None:
+        r = self.db.execute(
+            "SELECT id, kind, filename, stored_path, at FROM documents"
+            " WHERE programme=? AND kind=? AND is_current=1", (programme, kind)).fetchone()
+        return dict(r) if r else None
 
 
 def _now() -> str:

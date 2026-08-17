@@ -111,6 +111,8 @@
     <button class="modebtn on" id="m-advisor" onclick="switchMode('advisor')">Advisor</button>
     <button class="modebtn" id="m-queue" onclick="switchMode('queue')">Concession queue</button>
     <button class="modebtn" id="m-admin" onclick="switchMode('admin')">Admin worklist</button>
+    <button class="modebtn" id="m-completion" onclick="switchMode('completion')">Completion</button>
+    <button class="modebtn" id="m-erscheck" onclick="switchMode('erscheck')">ERS check</button>
   </div>
   <button class="modebtn" id="uploadbtn" onclick="openUpload()" title="Ingest a semester's ERS">Upload ERS</button>
   <span class="tag">Local · POPIA-contained</span>
@@ -120,11 +122,19 @@
   <form method="dialog" onsubmit="return false">
     <h2 style="margin:0 0 10px">Ingest an ERS export</h2>
     <p style="font-size:13px;color:var(--muted);margin:0 0 12px">
-      Reads the export into this machine's database and refreshes the picker.
-      Re-uploading the same file changes nothing; each new semester adds to the history.</p>
-    <label>Programme code<br><input id="u-code" placeholder="ENG-CIVIL" style="width:100%"></label><br><br>
-    <label>Name (optional)<br><input id="u-name" placeholder="Civil Engineering" style="width:100%"></label><br><br>
-    <label>Rule file (optional)<br><input id="u-yaml" placeholder="../programmes/civil.yaml" style="width:100%"></label><br><br>
+      Pick a programme, choose whether this is the initial run or the final capture,
+      and select the file. A <b>final</b> ERS is stored as the record; an
+      <b>initial</b> ERS is kept only so you can check it, never written to the record.</p>
+    <label>Programme<br><select id="u-prog" onchange="onUploadProg()" style="width:100%"></select></label><br><br>
+    <div id="u-manual" style="display:none">
+      <label>Programme code<br><input id="u-code" placeholder="ENG-CIVIL" style="width:100%"></label><br><br>
+      <label>Name (optional)<br><input id="u-name" placeholder="Civil Engineering" style="width:100%"></label><br><br>
+      <label>Rule file (optional)<br><input id="u-yaml" placeholder="../programmes/civil.yaml" style="width:100%"></label><br><br>
+    </div>
+    <label>ERS run<br><select id="u-kind" style="width:100%">
+      <option value="final">Final — captured record (stored)</option>
+      <option value="initial">Initial — raw ERS run (check only, not stored)</option>
+    </select></label><br><br>
     <label>ERS file (PDF, text, or CSV)<br><input id="u-file" type="file"></label><br><br>
     <div id="u-msg" style="font-size:13px;min-height:18px"></div>
     <div style="text-align:right">
@@ -143,6 +153,8 @@
 const $ = s => document.querySelector(s);
 let MODE="advisor", STUDENTS=[], QUEUE=null, ADMIN=null, DEC={}, QFILTER="pending", AFILTER="all", CURRENT=null, DETAIL=null;
 let PROGRAMME=null, PROGRAMMES=[];
+let COMPLETION=null, ERSCHECK=null, ERSSOURCE="final", PROGFILES=[], COMPFILTER=null;
+const MODES=["advisor","queue","admin","completion","erscheck"];
 const pq = extra => "?programme="+encodeURIComponent(PROGRAMME||"")+(extra||"");
 const BADGE={green:"b-green",orange:"b-orange",red:"b-red",exclude:"b-exclude",none:"b-gray",unknown:"b-gray"};
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -163,28 +175,50 @@ async function loadStudents(){
   const pr=PROGRAMMES.find(x=>x.code===PROGRAMME);
   $("#title").textContent=(pr?pr.name:PROGRAMME)+" — Registration Advisor";
   STUDENTS=await (await fetch("/api/students"+pq())).json();
-  CURRENT=null; DETAIL=null; QUEUE=null; ADMIN=null;
+  CURRENT=null; DETAIL=null; QUEUE=null; ADMIN=null; COMPLETION=null; ERSCHECK=null; COMPFILTER=null;
   renderSide();
   $("#main").innerHTML='<div class="empty">Pick a student to see their standing, grades, and advice.</div>';
 }
 async function switchProgramme(code){ PROGRAMME=code; MODE="advisor";
-  for(const x of ["advisor","queue","admin"]) $("#m-"+x).classList.toggle("on", x==="advisor");
+  for(const x of MODES) $("#m-"+x).classList.toggle("on", x==="advisor");
   await loadStudents(); }
 
 /* ---- upload ---- */
-function openUpload(){ $("#u-code").value=PROGRAMME||""; $("#u-msg").textContent=""; $("#upl").showModal(); }
+async function openUpload(){
+  $("#u-msg").textContent=""; $("#u-kind").value="final";
+  // The picker reads the programmes/ folder: pick one and its rule file is
+  // resolved server-side, so nothing but the file is typed.
+  PROGFILES=await (await fetch("/api/programme_files")).json().then(j=>j.programmes||[]).catch(()=>[]);
+  const opts=PROGFILES.map(p=>`<option value="${esc(p.code)}"${p.error?" disabled":""}>${esc(p.name)}${p.error?" — "+esc(p.error):""}</option>`).join("");
+  $("#u-prog").innerHTML=opts+'<option value="__manual__">Other (enter code)…</option>';
+  if(PROGRAMME && PROGFILES.some(p=>p.code===PROGRAMME)) $("#u-prog").value=PROGRAMME;
+  else if(!PROGFILES.length) $("#u-prog").value="__manual__";
+  onUploadProg();
+  $("#upl").showModal();
+}
+function onUploadProg(){
+  const manual=$("#u-prog").value==="__manual__";
+  $("#u-manual").style.display=manual?"block":"none";
+  if(manual && !$("#u-code").value) $("#u-code").value=PROGRAMME||"";
+}
 async function doUpload(){
-  const f=$("#u-file").files[0], code=$("#u-code").value.trim();
-  if(!code||!f){ $("#u-msg").textContent="Programme code and a file are required."; return; }
+  const f=$("#u-file").files[0], manual=$("#u-prog").value==="__manual__";
+  const code=manual?$("#u-code").value.trim():$("#u-prog").value;
+  const kind=$("#u-kind").value;
+  if(!code||!f){ $("#u-msg").textContent="A programme and a file are required."; return; }
   const fd=new FormData();
-  fd.append("programme",code); fd.append("name",$("#u-name").value.trim());
-  fd.append("yaml",$("#u-yaml").value.trim()); fd.append("file",f);
+  fd.append("programme",code); fd.append("kind",kind); fd.append("file",f);
+  if(manual){ fd.append("name",$("#u-name").value.trim()); fd.append("yaml",$("#u-yaml").value.trim()); }
   $("#u-go").disabled=true; $("#u-msg").textContent="Reading "+f.name+"…";
   try{
     const r=await (await fetch("/api/ingest",{method:"POST",body:fd})).json();
     if(r.error){ $("#u-msg").textContent="Failed: "+r.error; }
-    else{
-      $("#u-msg").textContent=`Ingested ${r.n_results} results, ${r.n_decisions} decisions for ${r.n_students} students.`;
+    else if(r.kind==="initial"){
+      $("#u-msg").textContent=`Initial ERS stored for checking (${r.n_results} results, ${r.n_decisions} decisions, ${r.n_students} students). Not written to the record.`;
+      await boot(); PROGRAMME=code; $("#progpick").value=code; await loadStudents();
+      setTimeout(()=>$("#upl").close(),1400);
+    }else{
+      $("#u-msg").textContent=`Captured ${r.n_results} results, ${r.n_decisions} decisions for ${r.n_students} students.`;
       await boot(); PROGRAMME=code; $("#progpick").value=code; await loadStudents();
       setTimeout(()=>$("#upl").close(),900);
     }
@@ -194,7 +228,7 @@ async function doUpload(){
 
 function switchMode(m){
   MODE=m;
-  for(const x of ["advisor","queue","admin"]) $("#m-"+x).classList.toggle("on", m===x);
+  for(const x of MODES) $("#m-"+x).classList.toggle("on", m===x);
   renderSide();
 }
 
@@ -210,6 +244,14 @@ async function renderSide(){
   if(MODE==="admin"){
     if(!ADMIN) ADMIN=await (await fetch("/api/admin"+pq())).json();
     renderAdminSide(); renderAdminMain();
+  }
+  if(MODE==="completion"){
+    if(!COMPLETION) COMPLETION=await (await fetch("/api/completion"+pq())).json();
+    renderCompletionSide(); renderCompletionMain();
+  }
+  if(MODE==="erscheck"){
+    if(!ERSCHECK) ERSCHECK=await (await fetch("/api/erscheck"+pq("&source="+ERSSOURCE))).json();
+    renderErsSide(); renderErsMain();
   }
 }
 
@@ -296,6 +338,120 @@ function renderAdminMain(){
 async function saveAdmin(){
   const r=await (await fetch("/api/admin/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({programme:PROGRAMME})})).json();
   $("#saved").textContent=`Saved ${r.count} lines to ${r.path}`;
+}
+
+/* ---- completion (DG / DGOR) ---- */
+function renderCompletionSide(){
+  const s=(COMPLETION&&COMPLETION.summary)||{DC:0,DGOR:0,DC_by_period:{}};
+  const ready=COMPLETION&&COMPLETION.ready;
+  const periods=s.DC_by_period||{};
+  const chip=(k,label,n)=>`<button class="${COMPFILTER===k?"on":""}" onclick="setCompFilter(${k===null?"null":`'${esc(k)}'`})">${esc(label)} ${n}</button>`;
+  $("#side").innerHTML=`
+    <button class="primary" style="width:100%" ${ready?"":"disabled"} onclick="exportCompletion()">Export both lists (CSV)</button>
+    <div class="saved" id="saved" style="margin:8px 2px 14px"></div>
+    <div class="qhead">Degree complete — by period</div>
+    <div class="qfilter">
+      ${chip(null,"All",s.DC)}
+      ${Object.entries(periods).map(([k,n])=>chip(k,k,n)).join("")}
+    </div>
+    <div class="qhead" style="margin-top:12px">Vac work only</div>
+    <div class="qfilter"><span class="badge b-orange" style="margin:2px">DGOR ${s.DGOR}</span></div>
+    <div style="font-size:12px;color:var(--muted);padding:6px 2px">
+      <b>DC</b> — every prescribed module passed (≥ 50); dated by the last requirement met.<br>
+      <b>DGOR</b> — only vacation work outstanding.<br>
+      Elective slots need your sign-off and are flagged, not gated.</div>
+    ${ready?"":'<div class="flag warn">This programme has no rule file bound, so completion cannot be computed.</div>'}`;
+}
+function completionTable(rows,dgor){
+  if(!rows.length) return '<p style="font-size:13px;color:var(--muted);margin:0">None.</p>';
+  const head=`<tr><th>Student</th><th>Completed</th><th>GPA</th><th>Credits</th><th>Electives</th>${dgor?"<th>Outstanding</th>":""}</tr>`;
+  const body=rows.map(r=>`<tr>
+    <td>${esc(r.name)||r.student_number}<br><span style="color:var(--muted)">${esc(r.student_number)}</span></td>
+    <td><b>${esc(r.completed||"—")}</b></td>
+    <td>${r.gpa}</td><td>${r.credits_passed}</td>
+    <td>${/REVIEW/.test(r.electives_ok)?`<span class="lane concession-approved">${esc(r.electives_ok)}</span>`:esc(r.electives_ok)}</td>
+    ${dgor?`<td><code>${esc(r.outstanding||"")}</code></td>`:""}</tr>`).join("");
+  return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+function groupByPeriod(rows){
+  const g={};
+  rows.forEach(r=>{const k=r.completed||"unknown";(g[k]=g[k]||[]).push(r);});
+  return Object.keys(g).sort().reverse().map(k=>[k,g[k]]);
+}
+function renderCompletionMain(){
+  const c=COMPLETION||{DC:[],DGOR:[]};
+  const dc=(c.DC||[]).filter(r=>!COMPFILTER||r.completed===COMPFILTER);
+  const groups=groupByPeriod(dc);
+  const dcBody=groups.length
+    ? groups.map(([k,rows])=>`<div class="bucket">
+        <div class="head">${esc(k)} <span class="count b-green">${rows.length}</span></div>
+        ${completionTable(rows,false)}</div>`).join("")
+    : '<p style="font-size:13px;color:var(--muted);margin:0">None.</p>';
+  $("#main").innerHTML=`
+    <div class="card"><h2>Degree complete (DC) · ${dc.length}${COMPFILTER?" · "+esc(COMPFILTER):""}</h2>
+      ${dcBody}</div>
+    <div class="card"><h2>Only vacation work outstanding (DGOR) · ${(c.DGOR||[]).length}</h2>
+      ${completionTable(c.DGOR||[],true)}</div>`;
+}
+function setCompFilter(k){ COMPFILTER=k; renderCompletionSide(); renderCompletionMain(); }
+async function exportCompletion(){
+  const r=await (await fetch("/api/completion/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({programme:PROGRAMME})})).json();
+  $("#saved").textContent=`Saved DC (${r.DC.count}) → ${r.DC.path} · DGOR (${r.DGOR.count}) → ${r.DGOR.path}`;
+}
+
+/* ---- ERS check (proposed vs calculated) ---- */
+async function setErsSource(src){ ERSSOURCE=src; ERSCHECK=null; await renderSide(); }
+function renderErsSide(){
+  const s=(ERSCHECK&&ERSCHECK.summary)||{total:0,match:0,mismatch:0,review:0};
+  const ready=ERSCHECK&&ERSCHECK.ready;
+  const err=ERSCHECK&&ERSCHECK.error;
+  $("#side").innerHTML=`
+    <div class="qhead">Source</div>
+    <div class="qfilter">
+      <button class="${ERSSOURCE==="final"?"on":""}" onclick="setErsSource('final')">Final (record)</button>
+      <button class="${ERSSOURCE==="initial"?"on":""}" onclick="setErsSource('initial')">Initial (raw run)</button>
+    </div>
+    <button class="primary" style="width:100%" ${ready&&s.mismatch?"":"disabled"} onclick="exportErs()">Export mismatches (CSV)</button>
+    <div class="saved" id="saved" style="margin:8px 2px 14px"></div>
+    <div class="qhead">Summary</div>
+    <div class="qfilter">
+      <span class="badge b-green" style="margin:2px">match ${s.match}</span>
+      <span class="badge b-red" style="margin:2px">mismatch ${s.mismatch}</span>
+      ${s.review?`<span class="badge b-blue" style="margin:2px">review ${s.review}</span>`:""}
+    </div>
+    <div style="font-size:12px;color:var(--muted);padding:6px 2px">
+      Compares the ERS's proposed code with the engine's, at the green / orange / red / exclude
+      level. Mismatches are the ones to check by hand — nothing is auto-changed.</div>
+    ${err?`<div class="flag warn">${esc(err)}</div>`:""}`;
+}
+function ersRow(r){
+  const dirCol=r.direction==="engine stricter"?"b-red":r.direction==="engine more lenient"?"b-orange":"b-blue";
+  return `<tr>
+    <td>${esc(r.name)||r.student_number}<br><span style="color:var(--muted)">${esc(r.student_number)}</span></td>
+    <td><span class="badge ${BADGE[r.registrar_status]}">${esc(r.registrar_code||"—")}</span></td>
+    <td><span class="badge ${BADGE[r.engine_status]}">${esc(r.engine_status)}</span><br>
+        <span style="color:var(--muted);font-size:11px">${esc(r.engine_code||"")}</span></td>
+    <td><span class="badge ${dirCol}">${esc(r.direction)}</span></td>
+    <td style="color:var(--muted)">cum ${r.cumulative_pct}% · sem ${r.semester_pct}% (${esc(r.period||"")})</td></tr>`;
+}
+function renderErsMain(){
+  const rows=((ERSCHECK&&ERSCHECK.rows)||[]).filter(r=>r.verdict!=="match");
+  const s=(ERSCHECK&&ERSCHECK.summary)||{total:0,match:0};
+  $("#main").innerHTML=`
+    <div class="card">
+      <div class="savebar"><h2 style="margin:0">Codes to check · ${rows.length} of ${s.total}</h2></div>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">
+        Source: <b>${ERSSOURCE==="initial"?"initial ERS run":"final captured record"}</b>.
+        ${s.match} of ${s.total} agree and are hidden here.</p>
+      ${rows.length?`<table>
+        <thead><tr><th>Student</th><th>ERS proposed</th><th>Engine</th><th>Difference</th><th>Basis</th></tr></thead>
+        <tbody>${rows.map(ersRow).join("")}</tbody></table>`
+      :'<p style="font-size:13px;color:var(--muted);margin:0">Every proposed code agrees with the engine.</p>'}
+    </div>`;
+}
+async function exportErs(){
+  const r=await (await fetch("/api/erscheck/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({programme:PROGRAMME,source:ERSSOURCE})})).json();
+  $("#saved").textContent=`Saved ${r.count} mismatches → ${r.path}`;
 }
 
 /* ---- detail ---- */
