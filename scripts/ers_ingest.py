@@ -35,6 +35,10 @@ SECTION_RE = re.compile(r"(\d{4})\s+(S?\d+)\s+([A-Z][A-Z0-9-]{2,})\s*:")
 # The registrar's term decision, and the year it belongs to.
 DECISION_HEADER_RE = re.compile(r"Term Decision Proposals For\s+(\d{4})")
 DECISION_LINE_RE = re.compile(r"Semester\s+(\d+)\s+Proposed\s*:\s*([A-Z0-9]+)\s*:\s*(.*)")
+# A historical term decision in the per-period "Term Decision Summary":
+# "<year> <block> <plan> <DD-MON-YYYY> <CODE> : <text>".
+DECISION_HISTORY_RE = re.compile(
+    r"(\d{4})\s+(S?\d+)\s+[A-Z][A-Z0-9-]{2,}\s+\d{2}-[A-Z]{3}-\d{4}\s+([A-Z0-9]+)\s*:\s*(.*)")
 # Credits earned by study period: "Summary By Study Period : 1: 72 2: 48".
 SUMMARY_RE = re.compile(r"(\d+):\s*(\d+)")
 
@@ -153,6 +157,15 @@ def parse_ers(text: str, programme: str) -> dict[str, list[dict]]:
                               "semester": int(dl.group(1)),
                               "term_code": dl.group(2),
                               "term_text": dl.group(3).strip()})
+            continue
+
+        hx = DECISION_HISTORY_RE.search(line)
+        if hx:
+            decisions.append({"student_number": student, "programme": programme,
+                              "calendar_year": int(hx.group(1)),
+                              "semester": 2 if hx.group(2).endswith("2") else 1,
+                              "term_code": hx.group(3),
+                              "term_text": hx.group(4).strip()})
             continue
 
         if "Summary By Study Period" in line:

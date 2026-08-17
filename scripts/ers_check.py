@@ -97,6 +97,13 @@ def latest_two_decisions(decisions: list[dict[str, Any]]) -> dict[str, dict[str,
             "prior": ({"code": (prior.get("term_code") or "").upper()} if prior else None)}
     return out
 
+# Incoming (prior) term codes normalised to an equivalent standing before the
+# trees read them. PROVISIONAL — returning RISU students are treated as PROB
+# (Justin, 2026-08-17, pending confirmation). Edit the value when verified.
+INCOMING_ALIASES: dict[str, str] = {"RISU": "PROB"}
+
+def _incoming_alias(code: str) -> str:
+    return INCOMING_ALIASES.get((code or "").upper(), (code or "").upper())
 
 # --- the check ---------------------------------------------------------------
 def check_student(rows: list[dict[str, Any]], registrar_code: str,
@@ -104,8 +111,12 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
                   policy: dict[str, Any] | None = None) -> dict[str, Any]:
     """Compare one student's ERS proposal with the engine's calculation."""
     shaped = _shape_rows(rows)
-    hist = {"last_status": STATUS_OF_CODE.get((prior_code or "").upper(), "none"),
+    prior_code = _incoming_alias(prior_code)          # normalise before use
+    hist = {"last_status": STATUS_OF_CODE.get(prior_code, "none"),
             "appeals_exhausted": (registrar_code or "").upper() in _EXCLUDE}
+    
+    # hist = {"last_status": STATUS_OF_CODE.get((prior_code or "").upper(), "none"),
+    #         "appeals_exhausted": (registrar_code or "").upper() in _EXCLUDE}
     metrics = E.derive_metrics(shaped, policy, hist)
     ers = E.classify(metrics, policy=policy)
 
