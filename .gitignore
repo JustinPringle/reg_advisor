@@ -1,4 +1,21 @@
-/.DS_Store
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Editors
+.spyproject/
+.vscode/
+.idea/
+
+# Local data — never commit (POPIA)
 data/*
-.spyproject
-*.pyc
+!data/.gitkeep
+
+# Generated store
+*.db
