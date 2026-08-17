@@ -178,6 +178,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/erscheck":
             self._json(CHK.ers_check(STORE, self._q("programme"),
                                      self._q("source", "final")))
+        elif path == "/api/erscheck/student":                       # <-- add
+            self._json(CHK.student_detail(STORE, self._q("programme"),
+                                          self._q("sn"), self._q("source", "final")))
         elif path == "/api/students":
             src = source(self._q("programme"))
             self._json(src.list_students() if src else {"error": "unknown programme"},
