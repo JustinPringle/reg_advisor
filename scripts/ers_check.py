@@ -81,15 +81,23 @@ def latest_two_decisions(decisions: list[dict[str, Any]]) -> dict[str, dict[str,
     Sorts each student's decisions by (calendar_year, semester); the last is the
     proposal under review, the one before it feeds the engine's history input.
     """
+    key = lambda x: (str(x.get("calendar_year") or ""), int(x.get("semester") or 0))
     by_sn: dict[str, list[dict[str, Any]]] = {}
     for d in decisions:
         by_sn.setdefault(str(d["student_number"]), []).append(d)
+    # The run's evaluation period is the newest decision in the file. Only
+    # students with a decision at that period are being evaluated this cycle;
+    # those whose newest decision is older (graduated, excluded, not proposed)
+    # are history-only and must not be checked against a stale code.
+    current_period = max((key(d) for d in decisions), default=("", 0))
     out: dict[str, dict[str, Any]] = {}
     for sn, ds in by_sn.items():
-        ds.sort(key=lambda x: (str(x.get("calendar_year") or ""),
-                               int(x.get("semester") or 0)))
+        ds.sort(key=key)
+        if key(ds[-1]) != current_period:
+            continue
         cur = ds[-1]
-        prior = ds[-2] if len(ds) > 1 else None
+        before = [d for d in ds if key(d) < current_period]
+        prior = before[-1] if before else None
         out[sn] = {
             "current": {"code": (cur.get("term_code") or "").upper(),
                         "text": cur.get("term_text") or "",

@@ -143,7 +143,12 @@
     </div>
   </form>
 </dialog>
-
+<dialog id="ersdet">
+  <div id="ersdet-body"></div>
+  <div style="text-align:right;margin-top:12px">
+    <button class="modebtn" onclick="document.getElementById('ersdet').close()">Close</button>
+  </div>
+</dialog>
 <div class="wrap">
   <aside id="side"></aside>
   <main id="main"><div class="empty">Pick a student to see their standing, grades, and advice.</div></main>
@@ -426,7 +431,7 @@ function renderErsSide(){
 }
 function ersRow(r){
   const dirCol=r.direction==="engine stricter"?"b-red":r.direction==="engine more lenient"?"b-orange":"b-blue";
-  return `<tr>
+  return `<tr onclick="ersDetail('${r.student_number}')" style="cursor:pointer" title="Open full record">
     <td>${esc(r.name)||r.student_number}<br><span style="color:var(--muted)">${esc(r.student_number)}</span></td>
     <td><span class="badge ${BADGE[r.registrar_status]}">${esc(r.registrar_code||"—")}</span></td>
     <td><span class="badge ${BADGE[r.engine_status]}">${esc(r.engine_status)}</span><br>
@@ -449,6 +454,51 @@ function renderErsMain(){
       :'<p style="font-size:13px;color:var(--muted);margin:0">Every proposed code agrees with the engine.</p>'}
     </div>`;
 }
+
+async function ersDetail(sn){
+  const d = await (await fetch("/api/erscheck/student"+pq("&sn="+encodeURIComponent(sn)+"&source="+ERSSOURCE))).json();
+  document.getElementById("ersdet-body").innerHTML = renderErsDetail(d);
+  document.getElementById("ersdet").showModal();
+}
+function renderErsDetail(d){
+  if(!d || !d.ready) return `<p>${esc((d&&d.error)||"No record.")}</p>`;
+  const reasons = (d.reasons||[]).map(x=>`<li style="font-size:12px;color:var(--muted)">${esc(x)}</li>`).join("");
+  const decs = (d.decisions||[]).map(x=>`<tr>
+      <td>${esc(x.year)} S${esc(x.semester)}</td>
+      <td><b>${esc(x.code)}</b></td>
+      <td style="color:var(--muted)">${esc(x.kind||"")}</td>
+      <td style="color:var(--muted)">${esc(x.text||"")}</td></tr>`).join("");
+  const periods = (d.periods||[]).map(p=>`
+    <div style="margin:8px 0 4px"><b>${esc(p.period)}</b>
+      <span style="color:var(--muted)">— passed ${p.passed} of ${p.registered} cr</span></div>
+    <table><tbody>${p.modules.map(m=>`<tr>
+        <td>${esc(m.code)}</td><td style="color:var(--muted)">${esc(m.name||"")}</td>
+        <td>${esc(m.credits)}</td><td>${m.mark==null?"—":esc(m.mark)}</td>
+        <td>${esc(m.result_code||"")}</td>
+        <td><span class="badge ${m.passed?"b-green":"b-red"}">${m.passed?"pass":"not passed"}</span></td>
+      </tr>`).join("")}</tbody></table>`).join("");
+  return `
+    <h2 style="margin:0 0 2px">${esc(d.name)||esc(d.student_number)}</h2>
+    <p style="margin:0 0 10px;color:var(--muted)">${esc(d.student_number)} · source: ${esc(d.source)}</p>
+    <div class="card" style="margin:0 0 12px">
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">
+        <span>ERS proposed <span class="badge ${BADGE[d.registrar_status]}">${esc(d.registrar_code||"—")}</span></span>
+        <span>Engine <span class="badge ${BADGE[d.engine_status]}">${esc(d.engine_status)}</span>
+              <span style="color:var(--muted);font-size:11px">${esc(d.engine_code||"")}</span></span>
+        <span>Prior <span class="badge b-gray">${esc(d.prior_code||"none")}</span></span>
+      </div>
+      <p style="margin:8px 0 0;font-size:13px;color:var(--muted)">
+        Cumulative ${d.cumulative_pct}% · this semester ${d.semester_pct}% (${esc(d.period||"")}) ·
+        credits passed ${d.credits_passed} of ${d.credits_assessed} assessed.</p>
+      <ul style="margin:6px 0 0;padding-left:18px">${reasons}</ul>
+    </div>
+    <h3 style="margin:0 0 4px">Decision history</h3>
+    <table><thead><tr><th>Period</th><th>Code</th><th>Kind</th><th>Note</th></tr></thead>
+      <tbody>${decs||'<tr><td colspan="4" style="color:var(--muted)">None on file.</td></tr>'}</tbody></table>
+    <h3 style="margin:14px 0 4px">Academic record</h3>
+    ${periods}`;
+}
+
 async function exportErs(){
   const r=await (await fetch("/api/erscheck/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({programme:PROGRAMME,source:ERSSOURCE})})).json();
   $("#saved").textContent=`Saved ${r.count} mismatches → ${r.path}`;
