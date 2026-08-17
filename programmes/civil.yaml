@@ -54,6 +54,14 @@ rules:
     ERS-ORANGE-SEM: 56
     ERS-RED-SECOND: 24
 
+  electives:              # degree elective rule (completion.py)
+    # (1) one Level-4 8-credit School-of-Engineering elective, PLUS
+    # (2) 24 further elective credits at any level, any college.
+    min_other_credits: 24
+    required:
+      - {level: 4, credits: 8, school: EN, count: 1,
+         label: "Level-4 8-credit School of Engineering elective"}
+
 modules:
 
   # ---- Year 1, Semester 1 -------------------------------------------------
