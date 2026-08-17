@@ -1,75 +1,188 @@
-# Advisor engines (Python port)
+# reg_advisor
 
-Two AutoScholar engines, ported to Python and run on UKZN ERS data and a
-programme curriculum. Both engines are pure: they read plain dicts and return
-plain dicts, so any programme is just different data, not different code.
+A local tool that reads a programme's ERS export, classifies each student, and
+shows what they may register. Academics decide; the tool clears the routine and
+routes the rest to review. It has one job: cut the coordinator's routine load so
+only genuine waiver decisions reach a person.
 
-## Files
+![Python](https://img.shields.io/badge/python-3.13-blue)
+![Dependencies](https://img.shields.io/badge/deps-PyYAML%20%C2%B7%20openpyxl-lightgrey)
+![Data](https://img.shields.io/badge/data-stays%20on%20device-green)
 
-- `ers_engine.py` — academic-standing classifier. Ordered `CRITERIA` as data,
-  a generic evaluator, and `derive_metrics` to roll result rows into the
-  figures the criteria read. Percentage thresholds live in `policy`.
-- `regadvisor_engine.py` — prerequisite advice. Transcript index, a
-  prerequisite-tree evaluator (`eval_term`), the four-bucket classifier
-  (`eval_advice`), plus blocking factor, concession evidence, and the
-  ERS→credit-cap table.
-- `data_loaders.py` — `load_curriculum` (spreadsheet → modules, parsing the
-  free-text prerequisite column) and `load_results` (CSV → transcript rows).
-- `advise.py` — the driver: one-student report, the COC cleared/review check,
-  and a whole-cohort sweep.
-- `test_engines.py` — fast checks on the pure engines.
+---
 
-## Run
+## The problem
 
-    python advise.py            # demo: one student, a COC check, a cohort sweep
-    python advise.py 218028575  # report for one student
-    python test_engines.py      # tests
+Each registration cycle, a programme coordinator hand-checks hundreds of module
+and change-of-curriculum requests against student transcripts: has this student
+passed the prerequisites, are they within their credit cap, do they qualify for
+a concession. Most requests are routine and provable from the record. A few need
+judgement. The manual process spends the coordinator's time on the many to reach
+the few.
 
-## The read / compute boundary
+reg_advisor reads the record, decides the provable cases, and hands the
+coordinator only what genuinely needs a decision.
 
-The engines never touch a file. The loaders do all I/O and hand the engines
-dicts. This is the AutoScholar separation kept intact: swap the loaders and the
-same engines run on any feed.
+## The heart of the advisor
 
-## Any programme
+Every prescribed module runs through one flow:
 
-Nothing is Civil-specific. A second programme supplies:
+```
+prescribed course
+    -> already passed?              -> passed
+    -> prereqs met?                 -> can register
+    -> GPA >= 55, <= 1 prereq short -> concession possible
+    otherwise                       -> blocked / review
+```
 
-1. a curriculum spreadsheet in the same layout (year/semester headers, then
-   `code | name | credits | ax | prereqs`), and
-2. a `policy` dict — pass mark, passing codes, and the cut points
-   (`cumulative_good`, `semester_good`, `min_progression_pct`).
+Thresholds are not baked into this flow. They live in the programme's YAML file,
+so an academic owns every number and the engine stays generic.
 
-The default policy is UKZN Engineering (`min_progression_pct = 48/72`). Pass the
-same `policy` to `derive_metrics` and `classify`; `advise_student` does this for
-you.
+## Design principles
 
-## Mapping to robot_system_logic.md
+- **Policy is data, not logic.** Rules and thresholds live in YAML; the engines
+  stay programme-agnostic. Academics own the numbers.
+- **Fail-safe.** The tool never mis-clears. Uncatalogued modules, unclassifiable
+  students, and every edge case route to human review.
+- **Standard library first.** No web framework, no CDN, no external calls. The
+  two dependencies (PyYAML, openpyxl) sit at the curriculum-authoring edge.
+- **Data stays on device.** Everything runs on localhost against local files.
+  Built to be POPIA-contained (see [Data and privacy](#data-and-privacy)).
+- **Prove before extending.** New auto-clear rules run in observe-only mode for
+  one cycle before they are trusted live.
 
-Ported directly:
+## Repository layout
 
-- Trees A/B/C become one ordered criteria list (first true wins), reading
-  `last_status` and `semesters_registered` rather than selecting a tree.
-- The 70% semester and 75% cumulative tests are `ERS-ORANGE-SEM` and
-  `ERS-ORANGE-CUMUL` / the green gate.
-- The 48-based minimum-progression gate is `below_minimum`
-  (`cumulative < min_progression_pct`).
-- The CEACOM/AEACOM appeal branch is the `FLOW` graph.
-- The 56/48/32 probation caps are the `ers_credit_cap` table, kept separate from
-  classification: label the standing, then look up the cap.
+```
+reg_advisor/
+├── data/               ERS exports and the generated SQLite store (git-ignored)
+├── programmes/         one YAML per programme: modules, prereq trees, thresholds
+│   ├── civil.yaml
+│   └── augmented_civil.yaml
+├── scripts/            run everything from here
+│   ├── regadvisor_engine.py    prereq tree -> four advice buckets
+│   ├── ers_engine.py           academic-standing classifier
+│   ├── data_loaders.py         prereq parser, result-text treatment
+│   ├── programme_loader.py     loads YAML, merges rules over safe defaults
+│   ├── advise.py               per-student report and cohort sweep
+│   ├── ers_ingest.py           programme-agnostic ERS parser
+│   ├── ingest_ers.py           CLI: parse a file, upsert to the store
+│   ├── store.py                SQLite store, idempotent upserts
+│   ├── datasource_sqlite.py    programme-scoped read interface
+│   ├── multipart.py            upload reader (cgi is gone in 3.13)
+│   ├── triage.py               splits admin vs academic queues
+│   ├── server.py               stdlib HTTP server on :8000
+│   ├── test_engines.py         engine tests
+│   └── test_ingest.py          ingest tests, against real data
+├── web/
+│   └── advisor.html            single-file page: picker, profile, plan, upload
+└── docs/                       design notes and workflow references
+```
 
-Approximated or deferred, and therefore routed to a human by design:
+## Requirements
 
-- Aggregate prerequisites the handbook states in prose (`>=32cr core`,
-  `passed all preceding core modules`) parse to a `review` term. The module can
-  never auto-clear; it goes to the coordinator with the original wording.
-- RAFC (final-year last chance), the completion override `min(56, remaining)`,
-  and a BLUE / Dean's-commendation leaf are not yet criteria. Each is additive:
-  one more entry in `CRITERIA` or the cap table.
+- Python 3.13 or later
+- PyYAML and openpyxl
 
-## What the demo shows
+```
+pip install pyyaml openpyxl
+```
 
-On the bundled data: 43 prescribed modules, 528 credits; 6 modules carry a
-`review` prerequisite. Across 308 students the classifier returns 208 green,
-91 orange, 9 red, with 100 students on a credit cap this term — the backtest
-figure for the academic-leader discussion.
+Nothing else. `sqlite3` and the HTTP server ship with Python.
+
+## Quick start
+
+Clone the repo and run from `scripts/`. Ingest a programme's ERS export, then
+start the server:
+
+```
+git clone https://github.com/JustinPringle/reg_advisor.git
+cd reg_advisor/scripts
+
+# ingest a programme
+python ingest_ers.py ../data/ENG-CV_ERS_1_Jul_2026.pdf \
+    --programme ENG-CIVIL --name "Civil Engineering" \
+    --yaml ../programmes/civil.yaml
+
+# serve the advisor
+python server.py
+```
+
+Open <http://127.0.0.1:8000>, pick a programme, and select a student. The page
+shows the student's standing, what they may register, and any concession cases.
+Uploading another programme's ERS through the page ingests it and adds it to the
+picker.
+
+## How it works
+
+```
+ERS export ──► ers_ingest ──► store (SQLite) ──► datasource ──► engines ──► page
+                                                                    │
+                                                              triage ─┴─► admin queue
+                                                                          academic queue
+```
+
+1. **Ingest.** `ers_ingest` reads any programme's ERS (PDF, text, or a saved
+   dump) into three record lists: students, module results, and the registrar's
+   term decisions. The plan code is read from each section line, not hard-coded.
+2. **Store.** `store` upserts those rows into one SQLite file, keyed by
+   programme. Re-uploading a cumulative export is a no-op; each new semester
+   grows the history.
+3. **Advise.** The engines classify each student and run every prescribed module
+   through the flow above, against that programme's YAML rules.
+4. **Triage.** `triage` splits the cohort's requests into an admin worklist (the
+   provable, routine cases) and an academic queue (the judgement calls).
+5. **Page.** A single vanilla-JS page presents all of it. No build step.
+
+## Data and privacy
+
+**Real student data never belongs in this repository.** ERS exports and the
+generated `advisor.db` contain student numbers and names, so `data/` is kept out
+of version control by `.gitignore`. Clone the repo, drop your own ERS export into
+`data/`, and it stays on your machine.
+
+The processing is designed to stay POPIA-contained: everything runs on the
+coordinator's machine, against locally held files, with no call to any external
+service. Publish the code and synthetic samples only.
+
+## Tests
+
+```
+cd scripts
+python test_engines.py
+python test_ingest.py
+```
+
+The engine tests cover the four advice buckets, the concession gate, and the
+auto-clear branches. The ingest tests run against the real cohort.
+
+## Status and roadmap
+
+Functionally complete across engines, ingest, store, server, and page. Two
+programmes advise on real data.
+
+Planned in phases:
+
+- **Phase 0** — MS Forms export to a filtered, dropdown-approval view.
+- **Phase 1** — Power Automate routing, a SharePoint list, a live dashboard.
+- **Phase 2** — the rule-engine auto-clear, live.
+
+Open decisions, deferred for academic sign-off rather than settled in code:
+whether supplementary marks carry the same as a first sitting; whether DP
+prerequisites should be modelled as more than a plain pass; and the auto-clear
+rule, which runs observe-only for one cycle first.
+
+## Background and credit
+
+The advising concept originates in **AutoScholar**, by **Prof Randhir Rawatlal**
+(UKZN). reg_advisor ports and generalises that idea so any programme can be
+analysed from its own ERS export and rules.
+
+Built and maintained by **Justin Pringle**, Senior Lecturer and Civil
+Engineering Programme Coordinator, University of KwaZulu-Natal.
+
+## License
+
+No license is set yet. Until one is added, all rights are reserved. MIT is a
+reasonable choice for the code; note that student data is not covered by any
+code license and must not be redistributed.
