@@ -39,6 +39,7 @@ def build_criteria(policy: dict[str, Any]) -> list[dict[str, Any]]:
     Mirrors the ProcessFlow ERS-CLASSIFY tree one criterion at a time. Each
     criterion = ALL of its (path, op, value) rules. First match wins.
     """
+    policy = {**DEFAULT_POLICY, **(policy or {})}
     cum = policy["cumulative_good"]
     sem = policy["semester_good"]
     return [
@@ -169,7 +170,8 @@ def derive_metrics(results: list[dict[str, Any]],
     the source, which summed raw per-period. The current-semester figure uses
     the latest *main* period only.
     """
-    policy = policy or DEFAULT_POLICY
+    # policy = policy or DEFAULT_POLICY
+    policy = {**DEFAULT_POLICY, **(policy or {})}
     history = history or {}
     min_pct = policy["min_progression_pct"]
 
