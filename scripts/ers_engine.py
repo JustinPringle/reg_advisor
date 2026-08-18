@@ -32,6 +32,28 @@ DEFAULT_POLICY: dict[str, Any] = {
     "min_progression_pct": 48 / 72,
 }
 
+def _below_minimum(cum_passed: float, cum_pct: float, semesters: int,
+                   policy: dict[str, Any], min_pct: float) -> bool:
+    """Below the progression floor. Uses the absolute min-progression credit for
+    the student's semester when a table is authored; otherwise the ratio."""
+    th = thresholds_for(semesters, policy)
+    if th and th.get("min_prog") is not None:
+        return float(cum_passed) < float(th["min_prog"])
+    return cum_pct < min_pct
+
+
+def thresholds_for(semesters: int, policy: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """The credit lines for a given count of completed semesters, or None when
+    the programme authored no table. The lookup clamps into range, so a student
+    past the last tabulated semester carries the final row's lines."""
+    table = ((policy or {}).get("progression")) or {}
+    keys = sorted(int(k) for k in table)
+    if not keys:
+        return None
+    s = min(max(int(semesters or 0), keys[0]), keys[-1])
+    row = table.get(s, table.get(str(s)))
+    mn, nm, p75 = (list(row) + [None, None, None])[:3]
+    return {"sem": s, "min_prog": mn, "normal": nm, "p75": p75}
 
 def build_criteria(policy: dict[str, Any]) -> list[dict[str, Any]]:
     """The ERS decision list as data, thresholds injected from `policy`.
@@ -231,9 +253,12 @@ def derive_metrics(results: list[dict[str, Any]],
                        "credits_passed_to_date": cum_passed},
         "semester": {"credit_pct_passed": sem_pct, "credits_total": sem_total,
                      "credits_passed": sem_passed, "period": current or ""},
-        "history": {"below_minimum": cum_pct < min_pct,
+        "history": {"below_minimum": _below_minimum(cum_passed, cum_pct,
+                                                    len(main_periods), policy, min_pct),
                     "semesters_registered": len(main_periods),
+                    "semesters_completed": len(main_periods),
                     "last_status": history.get("last_status", "none"),
                     "appeals_exhausted": bool(history.get("appeals_exhausted", False))},
+        "thresholds": thresholds_for(len(main_periods), policy),
         "periods": order,
     }
