@@ -157,11 +157,14 @@ def triage_queue(cur, results, apps: dict[str, list[str]],
 
 
 # --- demo queue + I/O -------------------------------------------------------
-def demo_apps(src: CsvSource, per_student: int = 6) -> tuple[dict, dict]:
+def demo_apps(src: CsvSource, per_student: int = 6,
+               only: set[str] | None = None) -> tuple[dict, dict]:
     """A plausible cycle: each student applies for what they are eligible or
     near-eligible to take (can_register + concession_possible)."""
     apps, names = {}, {}
     for sn in src.results:
+        if only is not None and sn not in only:
+            continue
         d = src.get_student(sn)
         codes = [m["code"] for m in d["advice"]["concession_possible"]] \
               + [m["code"] for m in d["advice"]["can_register"]]

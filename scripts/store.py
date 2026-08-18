@@ -186,6 +186,13 @@ class Store:
              for r in rows])
 
     # -- read ----------------------------------------------------------------
+    def years(self, programme: str) -> list[str]:
+        """Distinct calendar years present in a programme's results, newest first."""
+        rows = self.db.execute(
+            "SELECT DISTINCT calendar_year FROM results WHERE programme=?"
+            " AND calendar_year<>'' ORDER BY calendar_year DESC", (programme,)).fetchall()
+        return [r["calendar_year"] for r in rows]
+    
     def programmes(self) -> list[dict[str, Any]]:
         rows = self.db.execute(
             "SELECT p.code, p.name, p.yaml_path,"

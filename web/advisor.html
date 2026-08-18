@@ -170,6 +170,7 @@ const R=x=>Math.round(x);
 const key=(sn,code)=>sn+"|"+code;
 const today=()=>new Date().toISOString().slice(0,10);
 
+
 async function boot(){
   const p=await (await fetch("/api/programmes")).json();
   PROGRAMMES=p.programmes||[]; PROGRAMME=p.current;
@@ -187,6 +188,16 @@ async function loadStudents(){
   renderSide();
   $("#main").innerHTML='<div class="empty">Pick a student to see their standing, grades, and advice.</div>';
 }
+async function loadYears(){
+  const sel=$("#yearpick");
+  if(!PROGRAMME){ YEARS=[]; YEAR=null; CURRENT_YEAR=null; sel.innerHTML=""; return; }
+  const y=await (await fetch("/api/years"+pq())).json();
+  YEARS=y.years||[]; CURRENT_YEAR=y.current||null; YEAR=CURRENT_YEAR;   // default to current
+  sel.innerHTML=YEARS.map(v=>`<option value="${esc(v)}">${esc(v)}${v===CURRENT_YEAR?" (current)":""}</option>`).join("")
+    + '<option value="">All years</option>';
+  sel.value=YEAR||"";
+}
+
 async function switchProgramme(code){ PROGRAMME=code; MODE="advisor";
   for(const x of MODES) $("#m-"+x).classList.toggle("on", x==="advisor");
   await loadStudents(); }
