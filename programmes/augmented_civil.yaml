@@ -82,6 +82,24 @@ rules:
     exclude: 0
     ERS-ORANGE-SEM: 56
     ERS-RED-SECOND: 24
+  ers:
+    # Progression thresholds by semesters completed (robot_system_logic Section 3),
+    # augmented stream. Row = [min_progression, normal, p75_of_normal].
+    progression:
+      1:  [0,   16,  0]
+      2:  [32,  64,  48]
+      3:  [56,  104, 78]
+      4:  [96,  176, 132]
+      5:  [144, 240, 180]
+      6:  [192, 304, 228]
+      7:  [240, 368, 276]
+      8:  [288, 432, 324]
+      9:  [336, 504, null]
+      10: [384, 576, null]
+      11: [432, null, null]
+      12: [480, null, null]
+      13: [528, null, null]
+      14: [576, null, null]
 
 modules:
 

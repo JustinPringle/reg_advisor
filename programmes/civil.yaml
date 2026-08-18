@@ -53,7 +53,23 @@ rules:
     exclude: 0
     ERS-ORANGE-SEM: 56
     ERS-RED-SECOND: 24
-
+  ers:
+      # Progression thresholds by semesters completed (robot_system_logic Section 3).
+      # Absolute passed-credit lines the standing engine reads; academics own every
+      # number. Row = [min_progression, normal, p75_of_normal].
+      progression:
+        1:  [48,  72,  54]
+        2:  [96,  144, 108]
+        3:  [144, 216, 162]
+        4:  [192, 288, 216]
+        5:  [240, 360, 270]
+        6:  [288, 432, 324]
+        7:  [336, 504, 378]
+        8:  [384, 576, 432]
+        9:  [432, null, null]
+        10: [480, null, null]
+        11: [528, null, null]
+        12: [576, null, null]
   electives:              # degree elective rule (completion.py)
     # (1) one Level-4 8-credit School-of-Engineering elective, PLUS
     # (2) 24 further elective credits at any level, any college.

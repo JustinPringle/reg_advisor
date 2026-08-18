@@ -490,6 +490,10 @@ function renderErsDetail(d){
       <p style="margin:8px 0 0;font-size:13px;color:var(--muted)">
         Cumulative ${d.cumulative_pct}% · this semester ${d.semester_pct}% (${esc(d.period||"")}) ·
         credits passed ${d.credits_passed} of ${d.credits_assessed} assessed.</p>
+      ${d.thresholds?`<p style="margin:4px 0 0;font-size:13px;color:var(--muted)">
+        Semester ${d.semesters_completed}: min progression <b>${d.thresholds.min_prog}</b> ·
+        normal ${d.thresholds.normal==null?"—":d.thresholds.normal} ·
+        75% ${d.thresholds.p75==null?"—":d.thresholds.p75} cr.</p>`:""}
       <ul style="margin:6px 0 0;padding-left:18px">${reasons}</ul>
     </div>
     <h3 style="margin:0 0 4px">Decision history</h3>

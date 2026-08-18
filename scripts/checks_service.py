@@ -115,7 +115,9 @@ def student_detail(store: Any, programme: str, sn: str,
 
     # Credit totals as the engine counts them (best attempt per course).
     shaped = X._shape_rows(rows)
-    metrics = E.derive_metrics(shaped, policy, None)["cumulative"]
+    full = E.derive_metrics(shaped, policy, None)
+    metrics = full["cumulative"]
+    # metrics = E.derive_metrics(shaped, policy, None)["cumulative"]
 
     # Module record by period, using the engine's pass rule (shaped is 1:1).
     periods: dict[str, dict[str, Any]] = {}
@@ -152,5 +154,7 @@ def student_detail(store: Any, programme: str, sn: str,
             "semester_pct": chk["semester_pct"], "period": chk["period"],
             "credits_passed": metrics["credits_passed_to_date"],
             "credits_assessed": metrics["credits_expected_to_date"],
+            "semesters_completed": full["history"]["semesters_completed"],   # add
+            "thresholds": full["thresholds"],
             "periods": [periods[k] for k in sorted(periods)],
             "decisions": decisions}
