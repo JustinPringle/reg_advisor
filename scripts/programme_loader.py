@@ -103,8 +103,15 @@ def load_programme(path: str, validate: bool = True,
     prog.setdefault("code", "PROG")
     prog.setdefault("name", "")
     prog.setdefault("total_credits", total)   # a declared value wins if present
+    external = [str(c).strip() for c in (raw.get("external_prereqs") or [])]
+    for pair in (raw.get("equivalences") or []):
+        if isinstance(pair, dict):
+            external += [str(v).strip() for v in pair.values() if isinstance(v, str)]
     cur = {"programme": prog, "modules": modules, "elective_groups": {},
-           "rules": merge_rules(raw.get("rules"))}
+           "rules": merge_rules(raw.get("rules")),
+           "external_prereqs": sorted(set(external))}
+    # cur = {"programme": prog, "modules": modules, "elective_groups": {},
+    #        "rules": merge_rules(raw.get("rules"))}
 
     if validate:
         report = validate_programme(cur)
@@ -186,14 +193,23 @@ def validate_programme(cur: dict[str, Any]) -> dict[str, list[str]]:
                 warnings.append(f"{code}: {f} should be an integer")
 
     catalogue = set(codes)
+    allowed = {c.strip() for c in (cur.get("external_prereqs") or [])}
+    known = catalogue | allowed
+                    
+    # catalogue = set(codes)
     for code, m in codes.items():
         _validate_terms(m.get("prereqs", []), f"{code}.prereqs", errors)
         _validate_terms(m.get("coreqs", []), f"{code}.coreqs", errors)
         for ref in prereq_codes(m):
-            if ref not in catalogue:
+            if ref not in known:
                 warnings.append(
-                    f"{code}: prereq names {ref}, not in this programme "
-                    f"(treated as never-passed \u2192 routes to review/blocked)")
+                    f"{code}: prereq {ref} is neither a module in this programme "
+                    f"nor a declared external_prereqs code -- likely a typo, or add "
+                    f"it to external_prereqs if it names another programme's course.")
+            # if ref not in catalogue:
+            #     warnings.append(
+            #         f"{code}: prereq names {ref}, not in this programme "
+            #         f"(treated as never-passed \u2192 routes to review/blocked)")
 
     cyc = _find_cycle(codes)
     if cyc:
