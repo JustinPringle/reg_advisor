@@ -49,19 +49,47 @@ def _load_cur(store: Any, programme: str) -> dict[str, Any] | None:
         return None
 
 
-def completion(store: Any, programme: str) -> dict[str, Any]:
+def completion(store: Any, programme: str,
+               year: str = "", sem: str = "") -> dict[str, Any]:
+    """Degree-complete (DC) and vac-work-only (DGOR) lists.
+
+    `year`/`sem` scope by COMPLETION PERIOD -- the period a student met the last
+    requirement -- not by who is active now. `periods` is always the full
+    breakdown, so the picker stays put while the lists filter beneath it.
+    """
     cur = _load_cur(store, programme)
     if cur is None:
-        return {"ready": False, "DC": [], "DGOR": [],
+        return {"ready": False, "DC": [], "DGOR": [], "periods": [],
                 "summary": {"DC": 0, "DGOR": 0}}
     bio = {r["student_number"]: r for r in store.students(programme)}
     lists = C.completion_lists(cur, store.results(programme), bio)
-    return {"ready": True, **lists,
-            "summary": {"DC": len(lists["DC"]), "DGOR": len(lists["DGOR"])}}
+    dc, dgor = lists["DC"], lists["DGOR"]
+
+    counts: dict[tuple[str, Any], dict[str, int]] = {}
+    for tag, rows in (("dc", dc), ("dgor", dgor)):
+        for r in rows:
+            k = (str(r.get("completed_year") or ""), r.get("completed_semester") or "")
+            counts.setdefault(k, {"dc": 0, "dgor": 0})[tag] += 1
+    periods = [{"year": y, "semester": s, "dc": v["dc"], "dgor": v["dgor"]}
+               for (y, s), v in counts.items() if y]
+    periods.sort(key=lambda p: (p["year"], str(p["semester"])), reverse=True)
+
+    if year and sem:
+        keep = lambda r: (str(r.get("completed_year")) == year
+                          and str(r.get("completed_semester")) == sem)
+        dc = [r for r in dc if keep(r)]
+        dgor = [r for r in dgor if keep(r)]
+    return {"ready": True, "DC": dc, "DGOR": dgor, "periods": periods,
+            "summary": {"DC": len(dc), "DGOR": len(dgor)}}
 
 
-def ers_check(store: Any, programme: str, source: str = "final") -> dict[str, Any]:
-    """Compare registrar codes with the engine's, on the chosen source."""
+def ers_check(store: Any, programme: str, source: str = "final",
+              only: set[str] | None = None) -> dict[str, Any]:
+    """Compare registrar codes with the engine's, on the chosen source.
+
+    `only` scopes the report to one cohort: pass the cycle's student numbers and
+    the rows and summary cover just those students.
+    """
     cur = _load_cur(store, programme)
     if source == "initial":
         doc = store.current_document(programme, "initial")
@@ -75,6 +103,13 @@ def ers_check(store: Any, programme: str, source: str = "final") -> dict[str, An
         parsed = store_to_parsed(store, programme)
 
     report = X.check_parsed(parsed, cur)
+    if only is not None:
+        rows = [r for r in report["rows"] if str(r["student_number"]) in only]
+        report = {"rows": rows,
+                  "summary": {"total": len(rows),
+                              "match": sum(1 for r in rows if r["verdict"] == "match"),
+                              "mismatch": sum(1 for r in rows if r["verdict"] == "mismatch"),
+                              "review": sum(1 for r in rows if r["verdict"] == "review")}}
     return {"ready": True, "source": source, **report}
 
 def student_detail(store: Any, programme: str, sn: str,

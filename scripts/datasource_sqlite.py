@@ -37,6 +37,17 @@ STATUS_OF_CODE: dict[str, str] = {
 _EXCLUDE = {"XNFA", "XACA", "XAC"}
 PASS_CODES = {"P", "PM"}
 
+# A cohort is a cycle: a calendar year and a semester. The ERS block names the
+# period; a supplementary block belongs to the semester it supplements, so S1 is
+# semester 1 and S2 is semester 2. Block 0 (annual foundation) and the rare S3/S4
+# are not cohort keys -- every such student also has a semester row, so none is
+# lost. DECISION (Justin, 2026-08-18): S1->1, S2->2; 0/S3/S4 not cohort-scoped.
+SEM_OF_BLOCK = {"1": 1, "S1": 1, "2": 2, "S2": 2}
+
+
+def semester_of_block(block: str) -> int | None:
+    return SEM_OF_BLOCK.get((block or "").strip().upper())
+
 
 def list_programmes(store: Any) -> list[dict[str, Any]]:
     """Programmes on offer, for the picker."""
@@ -59,6 +70,19 @@ class SqliteSource:
                              for sn, rows in self.results.items()}
         self.years = sorted({y for ys in self.active_years.values() for y in ys}, reverse=True)
         self.current_year = self.years[0] if self.years else None
+        # Each student's set of (year, semester) cohorts, from their result rows.
+        self.active_cycles: dict[str, set[tuple[str, int]]] = {}
+        for sn, rows in self.results.items():
+            cs = set()
+            for r in rows:
+                sem = semester_of_block(r.get("block"))
+                yr = str(r.get("calendar_year") or "")
+                if sem and yr:
+                    cs.add((yr, sem))
+            self.active_cycles[sn] = cs
+        self.cycles = sorted({c for cs in self.active_cycles.values() for c in cs},
+                             reverse=True)
+        self.current_cycle = self.cycles[0] if self.cycles else None
 
     # -- loaders -------------------------------------------------------------
     def _load_rules(self, yaml_path: str | None) -> dict[str, Any] | None:
@@ -121,10 +145,24 @@ class SqliteSource:
             return set(self.results)
         return {sn for sn, ys in self.active_years.items() if self.current_year in ys}
     
-    def list_students(self, year: str | None = None) -> list[dict[str, Any]]:
+    def cohort(self, year: str, semester: int) -> set[str]:
+        """The students active in one cycle (year + semester)."""
+        key = (str(year), int(semester))
+        return {sn for sn, cs in self.active_cycles.items() if key in cs}
+
+    def cohorts(self) -> list[dict[str, Any]]:
+        """Every cycle on offer, newest first, with a headcount -- for the picker."""
+        return [{"year": y, "semester": s, "label": f"{y} \u00b7 Sem {s}",
+                 "n": len(self.cohort(y, s))} for (y, s) in self.cycles]
+
+    def list_students(self, year: str | None = None,
+                      semester: int | None = None) -> list[dict[str, Any]]:
+        members = self.cohort(year, semester) if (year and semester) else None
         out = []
         for sn in self.results:
-            if year and year not in self.active_years.get(sn, set()):
+            if members is not None and sn not in members:
+                continue
+            if members is None and year and year not in self.active_years.get(sn, set()):
                 continue
             b = self.bio.get(sn, {})
             name = f"{b.get('surname','')}, {b.get('name','')}".strip(", ")

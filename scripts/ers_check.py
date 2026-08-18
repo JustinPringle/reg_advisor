@@ -108,7 +108,7 @@ def latest_two_decisions(decisions: list[dict[str, Any]]) -> dict[str, dict[str,
 # Incoming (prior) term codes normalised to an equivalent standing before the
 # trees read them. PROVISIONAL — returning RISU students are treated as PROB
 # (Justin, 2026-08-17, pending confirmation). Edit the value when verified.
-INCOMING_ALIASES: dict[str, str] = {"RISU": "PROB"}
+INCOMING_ALIASES: dict[str, str] = {"RISU": "RSK2"}
 
 def _incoming_alias(code: str) -> str:
     return INCOMING_ALIASES.get((code or "").upper(), (code or "").upper())

@@ -41,7 +41,7 @@ import checks_service as CHK
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "web" / "advisor.html"
-DB = ROOT / "data" / "advisor.db"
+DB = ROOT / "data" / "student_data.db"
 UPLOADS = ROOT / "data" / "uploads"
 DECISIONS = ROOT / "data" / "decisions.csv"
 ADMIN_DIR = ROOT / "data"
@@ -50,7 +50,7 @@ HOST, PORT = "127.0.0.1", 8000
 
 STORE = Store(str(DB))
 _SOURCES: dict[str, SqliteSource] = {}
-_QUEUES: dict[str, dict[str, Any]] = {}
+_QUEUES: dict[tuple, dict[str, Any]] = {}     # keyed by (programme, year, sem)
 
 
 def source(programme: str) -> SqliteSource | None:
@@ -65,7 +65,8 @@ def source(programme: str) -> SqliteSource | None:
 
 def refresh(programme: str) -> None:
     _SOURCES.pop(programme, None)
-    _QUEUES.pop(programme, None)
+    for k in [k for k in _QUEUES if k[0] == programme]:
+        _QUEUES.pop(k, None)
 
 
 # --- decisions --------------------------------------------------------------
@@ -93,15 +94,17 @@ def record_decision(sn: str, code: str, decision: str, note: str) -> None:
 
 
 # --- concession queue (per programme) ---------------------------------------
-def build_queue(programme: str) -> dict[str, Any] | None:
+def build_queue(programme: str, year: str = "", sem: str = "") -> dict[str, Any] | None:
     src = source(programme)
     if src is None or not src.advice_ready:
         return None
-    if programme not in _QUEUES:
+    key = (programme, year, sem)
+    if key not in _QUEUES:
         rule = (src.cur.get("rules") or {}).get("autoclear") or CONCESSION_AUTOCLEAR
-        apps, names = demo_apps(src,only=src.current_students())
-        _QUEUES[programme] = triage_queue(src.cur, src.results, apps, names, rule)
-    return _QUEUES[programme]
+        only = src.cohort(year, int(sem)) if (year and sem) else src.current_students()
+        apps, names = demo_apps(src, only=only)
+        _QUEUES[key] = triage_queue(src.cur, src.results, apps, names, rule)
+    return _QUEUES[key]
 
 
 def annotate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -109,8 +112,8 @@ def annotate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             for r in rows]
 
 
-def admin_rows(programme: str) -> list[dict[str, Any]]:
-    q = build_queue(programme)
+def admin_rows(programme: str, year: str = "", sem: str = "") -> list[dict[str, Any]]:
+    q = build_queue(programme, year, sem)
     if q is None:
         return []
     today = date.today().isoformat()
@@ -174,19 +177,34 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/documents":
             self._json({"documents": STORE.documents(self._q("programme"))})
         elif path == "/api/completion":
-            self._json(CHK.completion(STORE, self._q("programme")))
+            self._json(CHK.completion(STORE, self._q("programme"),
+                                      self._q("year"), self._q("sem")))
         elif path == "/api/erscheck":
+            src = source(self._q("programme"))
+            year, sem = self._q("year"), self._q("sem")
+            only = src.cohort(year, int(sem)) if (src and year and sem) else None
             self._json(CHK.ers_check(STORE, self._q("programme"),
-                                     self._q("source", "final")))
+                                     self._q("source", "final"), only=only))
         elif path == "/api/erscheck/student":                       # <-- add
             self._json(CHK.student_detail(STORE, self._q("programme"),
                                           self._q("sn"), self._q("source", "final")))
+        elif path == "/api/cycles":
+            src = source(self._q("programme"))
+            if src is None:
+                self._json({"cycles": [], "current": None})
+            else:
+                cur = ({"year": src.current_cycle[0], "semester": src.current_cycle[1]}
+                       if src.current_cycle else None)
+                self._json({"cycles": src.cohorts(), "current": cur})
         elif path == "/api/students":
             src = source(self._q("programme"))
-            self._json(src.list_students() if src else {"error": "unknown programme"},
+            sem = self._q("sem")
+            self._json(src.list_students(self._q("year") or None,
+                                         int(sem) if sem else None)
+                       if src else {"error": "unknown programme"},
                        200 if src else 404)
         elif path == "/api/triage":
-            q = build_queue(self._q("programme"))
+            q = build_queue(self._q("programme"), self._q("year"), self._q("sem"))
             if q is None:
                 self._json({"academic": [], "auto": [], "summary": {}, "ready": False})
                 return
@@ -196,21 +214,13 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/decisions":
             self._json([{"sn": k[0], "code": k[1], **v} for k, v in DEC.items()])
         elif path == "/api/admin":
-            rows = admin_rows(self._q("programme"))
+            rows = admin_rows(self._q("programme"), self._q("year"), self._q("sem"))
             self._json({"rows": rows, "count": len(rows)})
         elif path.startswith("/api/students/"):
             sn = path.rsplit("/", 1)[-1]
             src = source(self._q("programme"))
             data = src.get_student(sn) if src else None
             self._json(data) if data else self._json({"error": "not found"}, 404)
-        elif path == "/api/years":
-            src = source(self._q("programme"))
-            self._json({"years": src.years, "current": src.current_year} if src
-                       else {"years": [], "current": None})
-        elif path == "/api/students":
-            src = source(self._q("programme"))
-            self._json(src.list_students(self._q("year") or None) if src
-                       else {"error": "unknown programme"}, 200 if src else 404)
         else:
             self._json({"error": "not found"}, 404)
 
@@ -243,24 +253,29 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "decided": len(DEC)})
         elif path == "/api/admin/export":
             programme = str(req.get("programme", "")) or self._q("programme")
-            rows = admin_rows(programme)
+            year, sem = str(req.get("year", "")), str(req.get("sem", ""))
+            rows = admin_rows(programme, year, sem)
             out = write_admin(programme, rows)
             self._json({"ok": True, "path": str(out.relative_to(ROOT)), "count": len(rows)})
         elif path == "/api/completion/export":
             programme = str(req.get("programme", "")) or self._q("programme")
-            comp = CHK.completion(STORE, programme)
+            year, sem = str(req.get("year", "")), str(req.get("sem", ""))
+            comp = CHK.completion(STORE, programme, year, sem)
             from completion import export_completion
-            dg = export_completion(comp["DG"], str(ADMIN_DIR / f"degree_complete_{programme}.csv"))
+            dg = export_completion(comp["DC"], str(ADMIN_DIR / f"degree_complete_{programme}.csv"))
             dgor = export_completion(comp["DGOR"], str(ADMIN_DIR / f"vac_only_{programme}.csv"), dgor=True)
-            self._json({"ok": True, "DG": {"path": str(dg.relative_to(ROOT)), "count": len(comp["DG"])},
+            self._json({"ok": True, "DG": {"path": str(dg.relative_to(ROOT)), "count": len(comp["DC"])},
                         "DGOR": {"path": str(dgor.relative_to(ROOT)), "count": len(comp["DGOR"])}})
         elif path == "/api/erscheck/export":
             programme = str(req.get("programme", "")) or self._q("programme")
-            source = str(req.get("source", "")) or self._q("source", "final")
-            rep = CHK.ers_check(STORE, programme, source)
+            ers_source = str(req.get("source", "")) or self._q("source", "final")
+            year, sem = str(req.get("year", "")), str(req.get("sem", ""))
+            src = source(programme)
+            only = src.cohort(year, int(sem)) if (src and year and sem) else None
+            rep = CHK.ers_check(STORE, programme, ers_source, only=only)
             from ers_check import export_mismatches
-            out = export_mismatches(rep, str(ADMIN_DIR / f"ers_mismatches_{programme}_{source}.csv"))
-            self._json({"ok": True, "source": source, "path": str(out.relative_to(ROOT)),
+            out = export_mismatches(rep, str(ADMIN_DIR / f"ers_mismatches_{programme}_{ers_source}.csv"))
+            self._json({"ok": True, "source": ers_source, "path": str(out.relative_to(ROOT)),
                         "count": rep.get("summary", {}).get("mismatch", 0)})
         else:
             self._json({"error": "not found"}, 404)
