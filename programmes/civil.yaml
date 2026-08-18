@@ -25,7 +25,9 @@
 #     full pass required. A bare code term still requires a pass (>=50).
 #   * "(DP)" prereqs. Encoded as a plain pass requirement (stricter than "has DP")
 #     — still open for your sign-off.
-
+external_prereqs:
+  - PHYS110
+  
 programme:
   code: ENG-CIVIL
   name: Civil Engineering

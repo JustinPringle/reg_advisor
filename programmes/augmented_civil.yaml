@@ -37,6 +37,8 @@ programme:
   code: ENG-CIVIL-AUG
   name: Civil Engineering (Augmented)
 
+external_prereqs:
+  - PHYS110
 # Augmented <-> mainstream twins (handbook equivalence table). Data only.
 equivalences:
   - {augmented: MATH160, mainstream: MATH131}   # Eng Mathematics 1A
