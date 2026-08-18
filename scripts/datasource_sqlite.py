@@ -55,6 +55,10 @@ class SqliteSource:
         self.bio = {r["student_number"]: r for r in store.students(programme)}
         self.history = self._load_history()
         self._cache: dict[str, dict[str, Any]] = {}
+        self.active_years = {sn: {str(r["calendar_year"]) for r in rows if r.get("calendar_year")}
+                             for sn, rows in self.results.items()}
+        self.years = sorted({y for ys in self.active_years.values() for y in ys}, reverse=True)
+        self.current_year = self.years[0] if self.years else None
 
     # -- loaders -------------------------------------------------------------
     def _load_rules(self, yaml_path: str | None) -> dict[str, Any] | None:
@@ -108,10 +112,20 @@ class SqliteSource:
             self._cache[sn] = advise_student(
                 self.cur, self.results[sn], history=self._engine_history(sn))
         return self._cache[sn]
-
-    def list_students(self) -> list[dict[str, Any]]:
+    
+    def current_students(self) -> set[str]:
+        """Students active in the current (latest) year. The registration
+        workflow acts only on these; older cohorts stay in the record and in
+        metrics but never enter triage. If no year is known, fall back to all."""
+        if not self.current_year:
+            return set(self.results)
+        return {sn for sn, ys in self.active_years.items() if self.current_year in ys}
+    
+    def list_students(self, year: str | None = None) -> list[dict[str, Any]]:
         out = []
         for sn in self.results:
+            if year and year not in self.active_years.get(sn, set()):
+                continue
             b = self.bio.get(sn, {})
             name = f"{b.get('surname','')}, {b.get('name','')}".strip(", ")
             official = self.history.get(sn, {}).get("status", "green")

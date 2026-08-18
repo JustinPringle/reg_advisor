@@ -99,7 +99,7 @@ def build_queue(programme: str) -> dict[str, Any] | None:
         return None
     if programme not in _QUEUES:
         rule = (src.cur.get("rules") or {}).get("autoclear") or CONCESSION_AUTOCLEAR
-        apps, names = demo_apps(src)
+        apps, names = demo_apps(src,only=src.current_students())
         _QUEUES[programme] = triage_queue(src.cur, src.results, apps, names, rule)
     return _QUEUES[programme]
 
@@ -203,6 +203,14 @@ class Handler(BaseHTTPRequestHandler):
             src = source(self._q("programme"))
             data = src.get_student(sn) if src else None
             self._json(data) if data else self._json({"error": "not found"}, 404)
+        elif path == "/api/years":
+            src = source(self._q("programme"))
+            self._json({"years": src.years, "current": src.current_year} if src
+                       else {"years": [], "current": None})
+        elif path == "/api/students":
+            src = source(self._q("programme"))
+            self._json(src.list_students(self._q("year") or None) if src
+                       else {"error": "unknown programme"}, 200 if src else 404)
         else:
             self._json({"error": "not found"}, 404)
 
