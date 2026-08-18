@@ -109,8 +109,9 @@ class SqliteSource:
         if not self.advice_ready:
             return None
         if sn not in self._cache:
-            self._cache[sn] = advise_student(
-                self.cur, self.results[sn], history=self._engine_history(sn))
+            self._cache[sn] = advise_student(self.cur, self.results[sn],
+                policy=(self.cur.get("rules") or {}).get("ers"),
+                history=self._engine_history(sn))
         return self._cache[sn]
     
     def current_students(self) -> set[str]:
