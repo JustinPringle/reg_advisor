@@ -35,7 +35,7 @@ CSV = "../data/ers_data.csv"
 def advise_student(cur: dict[str, Any], rows: list[dict[str, Any]],
                    policy: dict[str, Any] | None = None,
                    history: dict[str, Any] | None = None) -> dict[str, Any]:
-    tx = R.index_transcript(rows)
+    tx = R.index_transcript(rows, equivalences=cur.get("equivalences"))
     metrics = E.derive_metrics(rows, policy, history)
     ers = E.classify(metrics, policy=policy)
     rules = cur.get("rules") or {}

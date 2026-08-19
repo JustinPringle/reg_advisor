@@ -41,7 +41,8 @@ def code_level(code: str) -> int:
 def index_transcript(results: list[dict[str, Any]],
                      pass_codes: set[str] | None = None,
                      pass_mark: float = 50,
-                     core_len: int = DEFAULT_CORE_LEN) -> dict[str, Any]:
+                     core_len: int = DEFAULT_CORE_LEN,
+                     equivalences: list[tuple[str, str]] | None = None) -> dict[str, Any]:
     """Build the index the engine reads: best result + attempts per course,
     passed set, gpa (mean of passed marks), credits passed overall and by level,
     plus year_of_study / semesters_registered carried from the rows.
@@ -87,6 +88,17 @@ def index_transcript(results: list[dict[str, Any]],
         if b["passed"]:
             lv = code_level(c)
             credits_by_level[lv] = credits_by_level.get(lv, 0.0) + b["credits"]
+    # Twin equivalences (programme policy): passing one module of an equivalent
+    # pair credits the other. Applied AFTER the gpa and credit totals so a single
+    # sitting is never counted twice -- this only widens the lookups (passed_set,
+    # best) so completion and prerequisites recognise an articulation student's
+    # twin. Symmetric: whichever twin was sat satisfies the requirement.
+    for a, b in (equivalences or []):
+        a, b = core_code(a, core_len), core_code(b, core_len)
+        if a in passed_set and b not in passed_set:
+            passed_set.add(b); best.setdefault(b, {**best[a], "code": b})
+        elif b in passed_set and a not in passed_set:
+            passed_set.add(a); best.setdefault(a, {**best[b], "code": a})
     # Context carried straight from the rows (constant per student in this feed).
     yos = 0
     sems = set()

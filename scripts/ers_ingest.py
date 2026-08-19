@@ -105,6 +105,7 @@ def parse_ers(text: str, programme: str) -> dict[str, list[dict]]:
     # Per-student accumulators, flushed when the next student begins.
     pending_rows: list[dict] = []
     period_credits: dict[int, int] = {}
+    student_plan: Optional[str] = None   # current plan: the most recent period's
 
     def flush() -> None:
         """Stamp the current student's rows with year/credits, then bank them."""
@@ -118,7 +119,7 @@ def parse_ers(text: str, programme: str) -> dict[str, list[dict]]:
                 results.append(r)
             students.setdefault(student, {
                 "student_number": student, "programme": programme,
-                "surname": surname, "name": name, "plan_code": plan_code,
+                "surname": surname, "name": name, "plan_code": student_plan or plan_code,
                 "year_of_study": yos, "total_credits": total})
         pending_rows = []
         period_credits = {}
@@ -138,6 +139,7 @@ def parse_ers(text: str, programme: str) -> dict[str, list[dict]]:
             if sm.group(1) != student:      # a genuinely new student, not a page break
                 flush()
                 student = sm.group(1)
+                student_plan = None
                 bits = sm.group(2).replace(",", " ").split()
                 surname = bits[0] if bits else ""
                 name = bits[1] if len(bits) > 1 else ""
@@ -175,6 +177,8 @@ def parse_ers(text: str, programme: str) -> dict[str, list[dict]]:
         sec = SECTION_RE.search(line)
         if sec and ":" in line and not MODULE_RE.match(line.strip()):
             calendar_year, block, plan_code = sec.group(1), sec.group(2), sec.group(3)
+            if student_plan is None:        # first section after the header = latest period
+                student_plan = plan_code
             continue
 
         if MODULE_RE.match(line.strip()):

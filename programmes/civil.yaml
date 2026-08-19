@@ -32,6 +32,26 @@ programme:
   code: ENG-CIVIL
   name: Civil Engineering
 
+# Augmented <-> mainstream first-year twins (handbook equivalence table). An
+# augmented-entry student who articulates into mainstream Civil sits these eight
+# modules under their augmented codes; each is the handbook equivalent of a
+# mainstream first-year core. Declaring the pairs here lets the engine credit a
+# twin pass toward the mainstream requirement, so completion and prerequisites
+# recognise the articulation student's first year. Same table as
+# augmented_civil.yaml, read from the other side.
+#
+# DECISION (D-TWIN, J. Pringle, 2026-08-19): augmented first-year twins count as
+# passing their mainstream core for mainstream Civil advice and completion.
+equivalences:
+  - {augmented: MATH160, mainstream: MATH131}   # Eng Mathematics 1A
+  - {augmented: MATH161, mainstream: MATH141}   # Eng Mathematics 1B
+  - {augmented: PHYS160, mainstream: PHYS151}   # Eng Physics 1A
+  - {augmented: PHYS163, mainstream: PHYS152}   # Eng Physics 1B
+  - {augmented: ENME160, mainstream: ENME1DR}   # Engineering Drawing
+  - {augmented: ENCH160, mainstream: ENCH1TC}   # Technical Communication
+  - {augmented: ENAG161, mainstream: ENME1EM}   # Engineering Materials
+  - {augmented: ENAG160, mainstream: ENCV1ED}   # Engineering Design (Civil branch)
+
 # Policy, as data. Every threshold the engines apply is authored here, so a new
 # programme is a copy of this file with different numbers -- no code change. Omit
 # any key (or the whole block) to inherit the safe defaults in

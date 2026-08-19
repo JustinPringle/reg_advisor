@@ -258,7 +258,7 @@ def completion_lists(cur: dict[str, Any],
     dc: list[dict[str, Any]] = []
     dgor: list[dict[str, Any]] = []
     for sn, rows in results_by_sn.items():
-        tx = R.index_transcript(_as_engine_rows(rows))
+        tx = R.index_transcript(_as_engine_rows(rows), equivalences=cur.get("equivalences"))
         c = classify_completion(cur, tx)
         if c["status"] is None:
             continue
