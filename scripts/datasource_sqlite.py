@@ -25,16 +25,11 @@ from programme_loader import load_programme
 from advise import advise_student, check_additions
 from regadvisor_engine import code_level
 import regadvisor_engine as R
+from standing_codes import status_of, EXCLUDE_CODES
 
-# Registrar term code -> engine standing. Unknown / absent -> good standing
-# (fail-safe: an unrecognised code never invents probation).
-STATUS_OF_CODE: dict[str, str] = {
-    "CO": "green", "GREEN": "green", "BLUE": "green",
-    "RISK": "orange", "RSK2": "orange",
-    "PROB": "red", "FPRR": "red", "FPRD": "red", "FPMA": "red", "FPDS": "red",
-    "XNFA": "exclude", "XACA": "exclude", "XAC": "exclude",
-}
-_EXCLUDE = {"XNFA", "XACA", "XAC"}
+# The registrar-code -> standing map lives in standing_codes, shared with the
+# checker so the two never drift. status_of() resolves an unrecognised code to
+# "review" -- never green -- so a readmit or suspended student is never cleared.
 PASS_CODES = {"P", "PM"}
 
 # A cohort is a cycle: a calendar year and a semester. The ERS block names the
@@ -62,6 +57,7 @@ class SqliteSource:
         self.name = meta.get("name") or programme
         self.cur = self._load_rules(meta.get("yaml_path"))
         self.advice_ready = self.cur is not None
+        self.ers_policy = ((self.cur or {}).get("rules") or {}).get("ers")
         self.results = self._load_results()
         self.bio = {r["student_number"]: r for r in store.students(programme)}
         self.history = self._load_history()
@@ -119,14 +115,14 @@ class SqliteSource:
     def _load_history(self) -> dict[str, dict[str, Any]]:
         latest = self.store.latest_decisions(self.programme)
         return {sn: {"code": h["code"], "text": h["text"],
-                     "status": STATUS_OF_CODE.get(h["code"], "green")}
+                     "status": status_of(h["code"], self.ers_policy)}
                 for sn, h in latest.items()}
 
     def _engine_history(self, sn: str) -> dict[str, Any]:
         h = self.history.get(sn)
         if not h:
             return {"last_status": "none", "appeals_exhausted": False}
-        return {"last_status": h["status"], "appeals_exhausted": h["code"] in _EXCLUDE}
+        return {"last_status": h["status"], "appeals_exhausted": h["code"] in EXCLUDE_CODES}
 
     # -- interface -----------------------------------------------------------
     def _advise(self, sn: str) -> dict[str, Any] | None:
@@ -166,13 +162,13 @@ class SqliteSource:
                 continue
             b = self.bio.get(sn, {})
             name = f"{b.get('surname','')}, {b.get('name','')}".strip(", ")
-            official = self.history.get(sn, {}).get("status", "green")
+            official = self.history.get(sn, {}).get("status", "none")
             a = self._advise(sn)
             engine = a["ers"]["status"] if a else official
             out.append({"sn": sn, "name": name,
                         "year": b.get("year_of_study"),
                         "official": official, "engine": engine,
-                        "agree": official == engine})
+                        "agree": None if official == "none" else official == engine})
         out.sort(key=lambda x: x["name"].lower())
         return out
 
@@ -188,7 +184,7 @@ class SqliteSource:
             # Rules not authored yet: show who they are and where they stand.
             return {"bio": bio, "advice_ready": False,
                     "official": {"code": h.get("code", ""), "text": h.get("text", ""),
-                                 "status": h.get("status", "green")},
+                                 "status": h.get("status", "none")},
                     "engine": None, "agree": None, "cap": None,
                     "advice": {k: [] for k in ("can_register", "concession_possible",
                                "cannot_register", "needs_review", "passed")}}
@@ -221,12 +217,12 @@ class SqliteSource:
                     "semesters": tx["semesters_registered"], "in_progress": in_progress},
             "advice_ready": True,
             "official": {"code": h.get("code", ""), "text": h.get("text", ""),
-                         "status": h.get("status", "green")},
+                         "status": h.get("status", "none")},
             "engine": {"status": ers["status"], "code": ers["code"], "label": ers["label"],
                        "cumulative_pct": round(m["cumulative"]["credit_pct_passed"] * 100),
                        "semester_pct": round(m["semester"]["credit_pct_passed"] * 100),
                        "period": m["semester"]["period"]},
-            "agree": h.get("status", "green") == ers["status"],
+            "agree": None if h.get("status", "none") == "none" else h["status"] == ers["status"],
             "cap": cap,
             "advice": {k: slim(adv[k]) for k in
                        ("can_register", "concession_possible", "cannot_register",

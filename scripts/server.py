@@ -15,7 +15,7 @@ database and refreshes the picker. No student data leaves the machine.
     POST /api/ingest              multipart: file, programme, name, yaml -> ingest
     GET  /api/triage?programme=   the batched concession queue
     GET  /api/decisions           decisions recorded so far
-    POST /api/decide              {sn, code, decision, note} -> record a decision
+    POST /api/decide              {sn, code, decision, note, by} -> record a decision
     GET  /api/admin?programme=     the admin hand-off worklist
     POST /api/admin/export?programme=   write that worklist to CSV
 
@@ -70,27 +70,57 @@ def refresh(programme: str) -> None:
 
 
 # --- decisions --------------------------------------------------------------
+# Append-only log. A row is (student, module, decision, date, note, by). Two
+# live decisions -- "approved" and "declined" -- plus a "removed" tombstone
+# that undoes whichever decision preceded it. The file replays in order, so the
+# last row for a pair wins and a tombstone clears it. A legacy five-column file
+# is migrated once, at boot, to gain the "by" column; old rows still load.
+DEC_FIELDS = ["student_number", "module_code", "decision", "date", "note", "by"]
+
+
+def _migrate_decisions() -> None:
+    if not DECISIONS.exists():
+        return
+    with open(DECISIONS, newline="", encoding="utf-8") as fh:
+        rows = list(csv.reader(fh))
+    if rows and "by" not in rows[0]:
+        with open(DECISIONS, "w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(DEC_FIELDS)
+            for r in rows[1:]:
+                w.writerow((r + [""] * len(DEC_FIELDS))[:len(DEC_FIELDS)])
+
+
 def load_decisions() -> dict[tuple[str, str], dict[str, str]]:
     d: dict[tuple[str, str], dict[str, str]] = {}
     if DECISIONS.exists():
         with open(DECISIONS, newline="", encoding="utf-8") as fh:
             for r in csv.DictReader(fh):
-                d[(r["student_number"], r["module_code"])] = {
-                    "decision": r["decision"], "date": r.get("date", ""), "note": r.get("note", "")}
+                k = (r["student_number"], r["module_code"])
+                if r["decision"] == "removed":
+                    d.pop(k, None)
+                else:
+                    d[k] = {"decision": r["decision"], "date": r.get("date", ""),
+                            "note": r.get("note", ""), "by": r.get("by", "")}
     return d
 
 
+_migrate_decisions()
 DEC = load_decisions()
 
 
-def record_decision(sn: str, code: str, decision: str, note: str) -> None:
+def record_decision(sn: str, code: str, decision: str, note: str, by: str = "") -> None:
     new = not DECISIONS.exists()
     with open(DECISIONS, "a", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         if new:
-            w.writerow(["student_number", "module_code", "decision", "date", "note"])
-        w.writerow([sn, code, decision, date.today().isoformat(), note])
-    DEC[(sn, code)] = {"decision": decision, "date": date.today().isoformat(), "note": note}
+            w.writerow(DEC_FIELDS)
+        w.writerow([sn, code, decision, date.today().isoformat(), note, by])
+    if decision == "removed":
+        DEC.pop((sn, code), None)
+    else:
+        DEC[(sn, code)] = {"decision": decision, "date": date.today().isoformat(),
+                           "note": note, "by": by}
 
 
 # --- concession queue (per programme) ---------------------------------------
@@ -122,10 +152,10 @@ def admin_rows(programme: str, year: str = "", sem: str = "") -> list[dict[str, 
         rows.append({"student_number": r["student_number"], "name": r["name"],
                      "module_code": r["module_code"], "module_name": r["module_name"],
                      "credits": r["credits"], "lane": r["lane"],
-                     "basis": r["reason"], "note": "", "decided": today})
+                     "basis": r["reason"], "note": "", "by": "", "decided": today})
     acad = {(r["student_number"], r["module_code"]): r for r in q["academic"]}
     for (sn, code), d in DEC.items():
-        if d["decision"] != "approved":
+        if d["decision"] != "approved":       # declined and removed never reach admin
             continue
         ar = acad.get((sn, code))
         if not ar:
@@ -133,7 +163,8 @@ def admin_rows(programme: str, year: str = "", sem: str = "") -> list[dict[str, 
         rows.append({"student_number": sn, "name": ar["name"], "module_code": code,
                      "module_name": ar["module_name"], "credits": ar["credits"],
                      "lane": "concession-approved", "basis": "approved by academic",
-                     "note": d.get("note", ""), "decided": d.get("date", today)})
+                     "note": d.get("note", ""), "by": d.get("by", ""),
+                     "decided": d.get("date", today)})
     order = {"concession-approved": 0, "concession-auto": 1, "register": 2}
     rows.sort(key=lambda r: (order.get(r["lane"], 3), r["name"]))
     return rows
@@ -141,7 +172,7 @@ def admin_rows(programme: str, year: str = "", sem: str = "") -> list[dict[str, 
 
 def write_admin(programme: str, rows: list[dict[str, Any]]) -> Path:
     fields = ["student_number", "name", "module_code", "module_name", "credits",
-              "lane", "basis", "note", "decided"]
+              "lane", "basis", "note", "by", "decided"]
     path = ADMIN_DIR / f"admin_worklist_{programme}.csv"
     with open(path, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
@@ -249,7 +280,8 @@ class Handler(BaseHTTPRequestHandler):
             if not (sn and code and decision):
                 self._json({"error": "sn, code, decision required"}, 400)
                 return
-            record_decision(sn, code, decision, str(req.get("note", "")))
+            record_decision(sn, code, decision, str(req.get("note", "")),
+                            str(req.get("by", "")))
             self._json({"ok": True, "decided": len(DEC)})
         elif path == "/api/admin/export":
             programme = str(req.get("programme", "")) or self._q("programme")
