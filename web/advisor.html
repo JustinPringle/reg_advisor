@@ -77,10 +77,18 @@
   .qbtns input.note{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:3px 8px;width:150px}
   .qbtns button{font:inherit;font-size:12px;border-radius:7px;padding:3px 10px;cursor:pointer;border:1px solid}
   .approve{background:var(--green-bg);border-color:var(--green);color:var(--green)}
-  .escalate{background:var(--card);border-color:var(--line);color:var(--muted)}
+  .decline{background:var(--red-bg);border-color:var(--red);color:var(--red)}
   .decided{font-size:12px;font-weight:600;border-radius:20px;padding:2px 10px}
   .decided.approved{background:var(--green-bg);color:var(--green)}
-  .decided.escalated{background:var(--amber-bg);color:var(--amber)}
+  .decided.declined{background:var(--red-bg);color:var(--red)}
+  .undo{font:inherit;font-size:11px;border:none;background:none;color:var(--muted);
+    cursor:pointer;text-decoration:underline;padding:0 0 0 8px}
+  .by{color:var(--muted);font-weight:400}
+  .backlink{display:inline-block;font-size:13px;color:var(--blue);cursor:pointer;margin-bottom:12px}
+  .backlink:hover{text-decoration:underline}
+  .deciderbar{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:13px}
+  .deciderbar input{font:inherit;font-size:13px;border:1px solid var(--line);
+    border-radius:7px;padding:4px 8px;width:170px}
   table{width:100%;border-collapse:collapse;font-size:13px}
   th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
      padding:6px 8px;border-bottom:1px solid var(--line)}
@@ -164,6 +172,8 @@ let MODE="advisor", STUDENTS=[], DEC={}, CURRENT=null, DETAIL=null;
 let PROGRAMME=null, PROGRAMMES=[];
 let CYCLES=[], CYCLE=null, ROSTER=[], RUN=null, RUNDATA=null, ADMINDATA=null, ERSSOURCE="final";
 let COMPDATA=null, COMPPERIOD=null;
+let DECIDER=""; try{ DECIDER=localStorage.getItem("regadvisor_decider")||""; }catch(e){}
+function setDecider(v){ DECIDER=(v||"").trim(); try{ localStorage.setItem("regadvisor_decider",DECIDER); }catch(e){} }
 const MODES=["advisor","cohort","completion"];
 const pq = extra => "?programme="+encodeURIComponent(PROGRAMME||"")+(extra||"");
 const cq = () => CYCLE ? "&year="+encodeURIComponent(CYCLE.year)+"&sem="+encodeURIComponent(CYCLE.semester) : "";
@@ -186,7 +196,7 @@ async function boot(){
   $("#m-cohort").title=has?"Batch a cohort":"Upload an ERS to enable";
   $("#m-completion").disabled=!has;
   $("#m-completion").title=has?"Who has finished":"Upload an ERS to enable";
-  try{ (await (await fetch("/api/decisions")).json()).forEach(d=>DEC[key(d.sn,d.code)]={decision:d.decision,note:d.note,date:d.date}); }catch(e){}
+  try{ (await (await fetch("/api/decisions")).json()).forEach(d=>DEC[key(d.sn,d.code)]={decision:d.decision,note:d.note,date:d.date,by:d.by||""}); }catch(e){}
   await loadStudents();
   await loadCycles();
   renderSide();
@@ -349,15 +359,12 @@ function renderConcessionMain(){
   const q=RUNDATA||{academic:[],auto:[],summary:{}}, s=q.summary||{};
   const acad=(q.academic||[]).filter(r=>r.kind==="concession");
   const pending=acad.filter(r=>!DEC[key(r.student_number,r.module_code)]);
-  const rows=acad.map(r=>{
-    const d=DEC[key(r.student_number,r.module_code)];
-    const tag=d?`<span class="decided ${d.decision}">${esc(d.decision)}</span>`:`<span class="badge b-orange">${esc(r.score)}</span>`;
-    return `<tr onclick="pick('${r.student_number}')" style="cursor:pointer" title="Open record">
-      <td>${esc(r.name)||r.student_number}<br><span style="color:var(--muted)">${esc(r.student_number)}</span></td>
-      <td><code>${esc(r.module_code)}</code></td><td>${tag}</td>
-      <td style="color:var(--muted)">${esc(r.reason)}</td></tr>`;}).join("");
+  const admin=(ADMINDATA&&ADMINDATA.rows)||[];
   $("#main").innerHTML=`
     <div class="card"><h2>Concession run \u00b7 ${esc(cycleLabel(CYCLE))}</h2>
+      <div class="deciderbar"><label>Decisions by:</label>
+        <input id="decider" placeholder="your name" value="${esc(DECIDER)}"
+          onchange="setDecider(this.value);renderConcessionMain()"></div>
       <div class="row">
         <div class="kv"><b>${s.students||0}</b><span>students</span></div>
         <div class="kv"><b>${s.pct_hands_off||0}%</b><span>hands-off</span></div>
@@ -366,16 +373,69 @@ function renderConcessionMain(){
       </div></div>
     <div class="card"><h2>Needs your decision \u00b7 ${acad.length}</h2>
       ${acad.length?`<p style="font-size:13px;color:var(--muted);margin:0 0 10px">
-        Click a row to open the student and approve or escalate.</p>
-        <table><thead><tr><th>Student</th><th>Module</th><th>Score</th><th>Reason</th></tr></thead>
-        <tbody>${rows}</tbody></table>`
+        Approve or decline here, or click a name to open the full record first.</p>
+        <table><thead><tr><th>Student</th><th>Module</th><th>Score</th><th>Reason</th><th>Decision</th></tr></thead>
+        <tbody>${acad.map(concRow).join("")}</tbody></table>`
       :'<p style="font-size:13px;color:var(--muted);margin:0">Nothing to decide \u2014 the cohort is clear.</p>'}
     </div>
-    <div class="card"><h2>Cleared to admin \u00b7 ${(ADMINDATA&&ADMINDATA.count)||0}</h2>
+    <div class="card"><h2>Cleared to admin \u00b7 ${admin.length}</h2>
       <p style="font-size:13px;color:var(--muted);margin:0 0 10px">
-        Plain registrations, auto-cleared concessions, and everything you approve.</p>
-      <button class="primary" onclick="saveAdmin()">Save admin worklist (CSV)</button>
-      <span class="saved" id="saved2" style="margin-left:10px"></span></div>`;
+        Plain registrations, auto-cleared concessions, and everything you approve. Scan before saving.</p>
+      ${admin.length?`<table><thead><tr><th>Student</th><th>Module</th><th>Lane</th><th>Basis / note</th></tr></thead>
+        <tbody>${admin.map(adminRow).join("")}</tbody></table>`
+      :'<p style="font-size:13px;color:var(--muted);margin:0 0 12px">Nothing cleared yet.</p>'}
+      <div style="margin-top:12px">
+        <button class="primary" onclick="saveAdmin()">Save admin worklist (CSV)</button>
+        <span class="saved" id="saved2" style="margin-left:10px"></span></div></div>`;
+}
+function concRow(r){
+  const sn=r.student_number, code=r.module_code, d=DEC[key(sn,code)];
+  const open=`onclick="pick('${sn}')" style="cursor:pointer" title="Open record"`;
+  let act;
+  if(d){
+    act=`<span class="decided ${d.decision}">${d.decision}${d.note?" \u00b7 \u201c"+esc(d.note)+"\u201d":""}`
+       +`${d.by?` <span class="by">\u2014 ${esc(d.by)}</span>`:""}</span>`
+       +`<button class="undo" onclick="undoDecision('${sn}','${code}')">undo</button>`;
+  }else{
+    act=`<span class="qbtns">
+      <input class="note" id="cnote-${esc(sn)}-${esc(code)}" placeholder="note (optional)">
+      <button class="approve" onclick="decideCohort('${sn}','${code}','approved')">Approve</button>
+      <button class="decline" onclick="decideCohort('${sn}','${code}','declined')">Decline</button></span>`;
+  }
+  return `<tr><td ${open}>${esc(r.name)||sn}<br><span style="color:var(--muted)">${esc(sn)}</span></td>
+    <td ${open}><code>${esc(code)}</code></td>
+    <td><span class="badge b-orange">${esc(r.score)}</span></td>
+    <td style="color:var(--muted)">${esc(r.reason)}</td>
+    <td>${act}</td></tr>`;
+}
+function adminRow(r){
+  const basis=[r.basis,r.note].filter(Boolean).join(" \u00b7 ");
+  const who=r.by?` <span class="by">\u2014 ${esc(r.by)}</span>`:"";
+  return `<tr><td>${esc(r.name)||esc(r.student_number)}</td>
+    <td><code>${esc(r.module_code)}</code></td>
+    <td><span class="lane ${esc(r.lane)}">${esc(r.lane)}</span></td>
+    <td style="color:var(--muted)">${esc(basis)}${who}</td></tr>`;
+}
+async function refreshAdmin(){
+  try{ ADMINDATA=await (await fetch("/api/admin"+pq()+cq())).json(); }catch(e){ ADMINDATA=null; }
+}
+async function postDecision(sn,code,decision,note){
+  await fetch("/api/decide",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({programme:PROGRAMME,sn,code,decision,note,by:DECIDER})});
+  DEC[key(sn,code)]={decision,note,date:today(),by:DECIDER};
+}
+async function decideCohort(sn,code,decision){
+  const el=document.getElementById(`cnote-${sn}-${code}`);
+  await postDecision(sn,code,decision,el?el.value.trim():"");
+  await refreshAdmin(); renderConcessionMain();
+}
+async function undoDecision(sn,code){
+  await fetch("/api/decide",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({programme:PROGRAMME,sn,code,decision:"removed",note:"",by:DECIDER})});
+  delete DEC[key(sn,code)];
+  await refreshAdmin();
+  if(RUN==="concession") renderConcessionMain();
+  if(CURRENT===sn && DETAIL) render();
 }
 async function saveAdmin(){
   const r=await (await fetch("/api/admin/export",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -569,11 +629,13 @@ function carryPill(m){
 }
 function decideRow(m){
   const d=DEC[key(CURRENT,m.code)];
-  if(d) return `<span class="decided ${d.decision}">${d.decision}${d.note?" \u00b7 "+esc(d.note):""}</span>`;
+  if(d) return `<span class="decided ${d.decision}">${d.decision}${d.note?" \u00b7 \u201c"+esc(d.note)+"\u201d":""}`
+    +`${d.by?` <span class="by">\u2014 ${esc(d.by)}</span>`:""}</span>`
+    +`<button class="undo" onclick="undoDecision('${CURRENT}','${m.code}')">undo</button>`;
   return `<span class="qbtns">
     <input class="note" id="note-${esc(m.code)}" placeholder="note (optional)">
     <button class="approve" onclick="decide('${m.code}','approved')">Approve</button>
-    <button class="escalate" onclick="decide('${m.code}','escalated')">Escalate</button></span>`;
+    <button class="decline" onclick="decide('${m.code}','declined')">Decline</button></span>`;
 }
 function modLine(m,opts){
   const miss=(opts.withMiss&&m.unmet&&m.unmet.length)?`<span class="miss">needs ${m.unmet.map(esc).join(", ")}</span>`:"";
@@ -588,17 +650,21 @@ function bucket(title,k,cls,opts){
 }
 async function decide(code,decision){
   const el=document.getElementById("note-"+code);
-  const note=el?el.value.trim():"";
-  await fetch("/api/decide",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({programme:PROGRAMME,sn:CURRENT,code,decision,note})});
-  DEC[key(CURRENT,code)]={decision,note,date:today()};
-  ADMINDATA=null;
+  await postDecision(CURRENT,code,decision,el?el.value.trim():"");
+  await refreshAdmin();
   render();
+}
+function backToRun(){
+  CURRENT=null; DETAIL=null;
+  const listEl=document.getElementById("list");
+  if(listEl) listEl.innerHTML=listHtml(ROSTER);
+  renderCohortMain();
 }
 function render(){
   const d=DETAIL,b=d.bio,off=d.official,en=d.engine;
+  const back=(MODE==="cohort"&&RUN)?`<div class="backlink" onclick="backToRun()">\u2190 Back to ${RUN==="ers"?"ERS check":"concessions"}</div>`:"";
   if(d.advice_ready===false){
-    $("#main").innerHTML=`<div class="card">
+    $("#main").innerHTML=`${back}<div class="card">
       <div class="name">${esc(b.surname)}, ${esc(b.name)}</div>
       <div class="sn">${esc(b.sn)} \u00b7 ${esc(b.plan_code||"")}</div></div>
       <div class="card"><h2>Academic standing</h2>
@@ -613,7 +679,7 @@ function render(){
     :`<div class="flag warn">Engine re-derivation differs from the registrar
        (${esc(en.status)} vs ${esc(off.status)}). The registrar\u2019s code stands;
        the engine is indicative pending policy sign-off.</div>`;
-  $("#main").innerHTML=`
+  $("#main").innerHTML=`${back}
   <div class="card">
     <div class="name">${esc(b.surname)}, ${esc(b.name)}</div>
     <div class="sn">${esc(b.sn)} \u00b7 Year ${b.year_of_study?R(b.year_of_study):"\u2014"}</div>
@@ -644,7 +710,7 @@ function render(){
     ${DETAIL.advice.concession_possible.length
       ? `<p style="font-size:13px;color:var(--muted);margin:0 0 10px">
           Near-misses: average \u2265 55, one requirement short, prerequisite carried above 45.
-          Add a note if you like, then approve to send to admin, or escalate.</p>
+          Add a note if you like, then approve to send to admin, or decline.</p>
         ${bucket("","concession_possible","b-orange",{withMiss:true,concession:true,decide:true})}`
       : `<p style="font-size:13px;color:var(--muted);margin:0">No concession applies \u2014 this student
           meets every prerequisite outright or falls short of the carry rule.</p>`}
