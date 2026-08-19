@@ -104,12 +104,17 @@ def load_programme(path: str, validate: bool = True,
     prog.setdefault("name", "")
     prog.setdefault("total_credits", total)   # a declared value wins if present
     external = [str(c).strip() for c in (raw.get("external_prereqs") or [])]
+    equivalences: list[tuple[str, str]] = []
     for pair in (raw.get("equivalences") or []):
         if isinstance(pair, dict):
-            external += [str(v).strip() for v in pair.values() if isinstance(v, str)]
+            codes = [str(v).strip() for v in pair.values() if isinstance(v, str)]
+            external += codes
+            if len(codes) == 2:
+                equivalences.append((codes[0], codes[1]))
     cur = {"programme": prog, "modules": modules, "elective_groups": {},
            "rules": merge_rules(raw.get("rules")),
-           "external_prereqs": sorted(set(external))}
+           "external_prereqs": sorted(set(external)),
+           "equivalences": equivalences}
     # cur = {"programme": prog, "modules": modules, "elective_groups": {},
     #        "rules": merge_rules(raw.get("rules"))}
 
