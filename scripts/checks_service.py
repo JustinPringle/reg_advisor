@@ -102,14 +102,10 @@ def ers_check(store: Any, programme: str, source: str = "final",
         source = "final"
         parsed = store_to_parsed(store, programme)
 
-    report = X.check_parsed(parsed, cur)
+    report = X.check_parsed(parsed, cur, roster=only)
     if only is not None:
         rows = [r for r in report["rows"] if str(r["student_number"]) in only]
-        report = {"rows": rows,
-                  "summary": {"total": len(rows),
-                              "match": sum(1 for r in rows if r["verdict"] == "match"),
-                              "mismatch": sum(1 for r in rows if r["verdict"] == "mismatch"),
-                              "review": sum(1 for r in rows if r["verdict"] == "review")}}
+        report = {"rows": rows, "summary": X._summary(rows)}
     return {"ready": True, "source": source, **report}
 
 def student_detail(store: Any, programme: str, sn: str,
