@@ -126,10 +126,8 @@
   .kpi b{display:block;font-size:24px;font-weight:600;line-height:1.1} .kpi .k{font-size:11px;color:var(--muted);margin-top:3px}
   .kpi.hi b{color:var(--red)} .kpi.good b{color:var(--green)}
   .hsec h2{scroll-margin-top:12px}
-  .chart{width:100%;height:auto;font-size:11px;overflow:visible}
-  .chart text{fill:var(--ink)} .chart .ax{fill:var(--muted);font-size:10px} .chart .gl{stroke:var(--line);stroke-width:1}
-  .chart .vlab{fill:var(--muted);font-size:10px}
-  .chart rect.bar:hover,.chart circle.pt:hover{opacity:.78;cursor:default}
+  .cwrap{position:relative;width:100%}
+  .note{font-size:12px;color:var(--muted);margin-top:8px}
   .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:4px 0 10px}
   .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
   .htab{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
@@ -151,6 +149,7 @@
 </style>
 </head>
 <body>
+<script src="/vendor/chart.umd.js"></script>
 <header>
   <h1 id="title">Registration Advisor</h1>
   <select id="progpick" onchange="switchProgramme(this.value)" title="Programme"></select>
@@ -772,24 +771,52 @@ function render(){
     ${bucket("Already passed","passed","b-gray",{passed:true})}
   </div>`;
 }
-/* ================= HEALTH / PROGRAMME ANALYST ================= */
+/* ================= HEALTH / PROGRAMME ANALYST (Chart.js, live-bound) ================= */
 const HCOL={green:"#0f6e56",amber:"#854f0b",red:"#a32d2d",blue:"#185fa5",accent:"#1d3a5f",
   b0:"#0f6e56",b1:"#4e8f5f",b2:"#c79a3a",b3:"#c2732e",b4:"#a32d2d",active:"#185fa5",left:"#d9d6cc"};
 const BANDCOL=[HCOL.b0,HCOL.b1,HCOL.b2,HCOL.b3,HCOL.b4];
 const sev=fr=> fr>=40?HCOL.red : fr>=25?"#c2732e" : fr>=15?HCOL.amber : HCOL.green;
 const HSECTIONS=[["overview","Overview"],["intake","Intake"],["throughput","Throughput"],["ttd","Time to degree"],["modules","Module health"]];
+const CFONT={family:"-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif",size:11};
+const gridC="#e2e0d7", tickC="#6c6b64", inkC="#26261f";
+let HCHARTS=[];
+
+/* one small plugin, no extra library: a dashed vertical marker (the regulation line) */
+if(window.Chart && !Chart.registry.plugins.get("vline")){
+  Chart.register({id:"vline",afterDatasetsDraw(chart){
+    const o=chart.options.plugins.vline; if(!o||o.value==null) return;
+    const sx=chart.scales.x; if(!sx) return; let x=sx.getPixelForValue(o.value);
+    if(x==null||isNaN(x)) return; x+=o.dx||0;
+    const {top,bottom}=chart.chartArea, c=chart.ctx;
+    c.save(); c.strokeStyle=o.color||HCOL.amber; c.setLineDash([4,3]); c.lineWidth=1.2;
+    c.beginPath(); c.moveTo(x,top); c.lineTo(x,bottom); c.stroke();
+    if(o.label){ c.setLineDash([]); c.fillStyle=o.color||HCOL.amber; c.font="10px "+CFONT.family; c.fillText(o.label,x+4,top+11); }
+    c.restore();
+  }});
+}
+function newChart(id,cfg){ const el=document.getElementById(id); if(!el) return; const c=new Chart(el.getContext("2d"),cfg); HCHARTS.push(c); return c; }
+function destroyCharts(){ HCHARTS.forEach(c=>{try{c.destroy();}catch(e){}}); HCHARTS=[]; }
+
+/* shared scale factories, styled to the page palette */
+const xLin=(title,max)=>Object.assign({grid:{color:gridC},ticks:{color:tickC,font:CFONT},
+  title:title?{display:true,text:title,color:tickC,font:CFONT}:{display:false}}, max?{max}:{});
+const yLin=title=>({beginAtZero:true,grid:{color:gridC},ticks:{color:tickC,font:CFONT},
+  title:title?{display:true,text:title,color:tickC,font:CFONT}:{display:false}});
+const xCat=title=>({grid:{display:false},ticks:{color:tickC,font:CFONT},
+  title:title?{display:true,text:title,color:tickC,font:CFONT}:{display:false}});
+const yCat=()=>({grid:{display:false},ticks:{color:inkC,font:CFONT}});
+const legend=on=>({display:on,position:"top",labels:{color:tickC,font:CFONT,boxWidth:11,padding:8}});
 
 async function loadHealth(){
   $("#side").innerHTML='<div class="empty">Loading\u2026</div>';
   $("#main").innerHTML='<div class="empty">Reading the record\u2026</div>';
   try{ HEALTH=await (await fetch("/api/health"+pq())).json(); }catch(e){ HEALTH=null; }
-  if(!HEALTH||!HEALTH.ready){
+  if(!HEALTH||!HEALTH.ready){ destroyCharts();
     $("#side").innerHTML='<div class="empty">Health unavailable.</div>';
     $("#main").innerHTML='<div class="empty">Programme health needs the programme\u2019s rule file.<br>Author its YAML, then reload.</div>';
-    return;
-  }
-  const mature=HEALTH.cohorts.cohorts.filter(c=>c.mature && c.n>=5);
-  HCOHORT=HCOHORT||(mature.length?mature[mature.length-1].intake:(HEALTH.cohorts.survival.slice(-1)[0]||{}).intake);
+    return; }
+  const m=HEALTH.cohorts.cohorts.filter(c=>c.mature&&c.n>=5);
+  HCOHORT=HCOHORT||(m.length?m[m.length-1].intake:(HEALTH.cohorts.survival.slice(-1)[0]||{}).intake);
   renderHealthSide(); renderHealthMain();
 }
 function renderHealthSide(){
@@ -803,15 +830,17 @@ function renderHealthSide(){
 }
 function hgoto(s){ HSECTION=s; renderHealthSide(); renderHealthMain(); $("#main").scrollTop=0; }
 function renderHealthMain(){
+  destroyCharts();
   const m=$("#main");
-  m.innerHTML = HSECTION==="overview"?hOverview()
-    : HSECTION==="intake"?hIntake()
-    : HSECTION==="throughput"?hThroughput()
-    : HSECTION==="ttd"?hTTD()
-    : hModules();
+  if(HSECTION==="overview"){ m.innerHTML=hOverview(); mountOverview(); }
+  else if(HSECTION==="intake"){ m.innerHTML=hIntake(); mountIntake(); }
+  else if(HSECTION==="throughput"){ m.innerHTML=hThroughput(); mountThroughput(); }
+  else if(HSECTION==="ttd"){ m.innerHTML=hTTD(); mountTTD(); }
+  else { m.innerHTML=hModules(); mountModules(); }
 }
 function kpi(v,k,cls){ return `<div class="kpi ${cls||''}"><b>${v}</b><div class="k">${esc(k)}</div></div>`; }
 
+/* ---- Overview ---- */
 function hOverview(){
   const o=HEALTH.overview, t=HEALTH.cohorts.time_to_degree;
   const kp=[kpi(o.students,"students on record"),kpi(o.current_headcount,"registered "+o.current_year),
@@ -819,48 +848,94 @@ function hOverview(){
     kpi(t.median_semesters!=null?t.median_semesters+" sem":"\u2014","median time to finish"),
     kpi(o.n_finishers?R(100*o.on_time_finishers/o.n_finishers)+"%":"\u2014","finished in regulation time"),
     kpi(o.worst_gatekeeper||"\u2014","worst gatekeeper","hi")].join("");
-  const gk=HEALTH.gatekeepers.slice(0,6);
-  const bars=svgHBars(gk.map(g=>({label:g.code,value:g.fail_rate,color:sev(g.fail_rate),
-    title:`${g.code} ${g.name}\n${g.failed} of ${g.enrolled} failed \u00b7 ${g.fail_rate}% \u00b7 blocks ${g.blocking}`,right:g.fail_rate+"%"})),{max:100,unit:"% who failed"});
   const dec=HEALTH.decisions.map(d=>`<li><b>${d.id}.</b> ${esc(d.text)}</li>`).join("");
   return `<div class="hsec"><h2 style="margin-top:0">Programme health</h2>
     <div class="kpis">${kp}</div>
-    <div class="card"><h2>Where students stall \u2014 top gatekeepers</h2>${bars}
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">Fail rate among students who sat the module; only modules with \u226510 settled results are ranked. See <b>Module health</b> for the full picture.</div></div>
+    <div class="card"><h2>Where students stall \u2014 top gatekeepers</h2>
+      <div class="cwrap" style="height:230px"><canvas id="c-ov-gk"></canvas></div>
+      <div class="note">Fail rate among students who sat the module; only modules with \u226510 settled results are ranked. See <b>Module health</b> for the full picture.</div></div>
     <div class="decis"><b>Open decisions</b> \u2014 counted as stated, awaiting sign-off:<ul>${dec}</ul></div></div>`;
 }
-function hIntake(){
-  const ib=HEALTH.cohorts.intake_by_year, years=Object.keys(ib).sort();
-  const data=years.map(y=>({label:y,value:ib[y],color:HCOL.accent,title:`${y}: ${ib[y]} entered`}));
-  return `<div class="hsec"><h2 style="margin-top:0">Intake by year</h2>
-    <div class="card">${svgBars(data,{unit:"students"})}
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">A student\u2019s intake year is the earliest year they hold a result (decision H-INTAKE). Small early cohorts are older stragglers, not full intakes.</div></div></div>`;
+function mountOverview(){
+  const gk=HEALTH.gatekeepers.slice(0,6);
+  newChart("c-ov-gk",{type:"bar",
+    data:{labels:gk.map(g=>g.code),datasets:[{data:gk.map(g=>g.fail_rate),backgroundColor:gk.map(g=>sev(g.fail_rate)),borderRadius:3}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,animation:{duration:450},
+      plugins:{legend:legend(false),tooltip:{callbacks:{
+        title:i=>gk[i[0].dataIndex].code,
+        label:i=>{const g=gk[i.dataIndex];return [` ${g.name}`,` ${g.failed} of ${g.enrolled} failed \u2014 ${g.fail_rate}%`,` blocks ${g.blocking} downstream`];}}}},
+      scales:{x:xLin("% who failed",100),y:yCat()}}});
 }
+
+/* ---- Intake ---- */
+function hIntake(){
+  return `<div class="hsec"><h2 style="margin-top:0">Intake by year</h2>
+    <div class="card"><div class="cwrap" style="height:300px"><canvas id="c-intake"></canvas></div>
+      <div class="note">A student\u2019s intake year is the earliest year they hold a result (decision H-INTAKE). Small early cohorts are older stragglers, not full intakes.</div></div></div>`;
+}
+function mountIntake(){
+  const ib=HEALTH.cohorts.intake_by_year, ys=Object.keys(ib).sort();
+  newChart("c-intake",{type:"bar",
+    data:{labels:ys,datasets:[{data:ys.map(y=>ib[y]),backgroundColor:HCOL.accent,borderRadius:3,hoverBackgroundColor:HCOL.blue}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:450},
+      plugins:{legend:legend(false),tooltip:{callbacks:{label:i=>` ${i.parsed.y} entered`}}},
+      scales:{x:xCat(),y:yLin("students")}}});
+}
+
+/* ---- Throughput ---- */
 function hThroughput(){
-  const C=HEALTH.cohorts, bands=C.bands, rows=C.cohorts.filter(c=>c.n>=5);
-  const segRows=rows.map(c=>{const segs=bands.map((b,i)=>({value:c.bands[b],color:BANDCOL[i],label:b}));
-    segs.push({value:c.active,color:HCOL.active,label:"still active"}); segs.push({value:c.left,color:HCOL.left,label:"left"});
-    return {label:c.intake+" \u00b7 n="+c.n,total:c.n,segs,meta:c};});
-  const legendItems=[...bands.map((b,i)=>[BANDCOL[i],b]),[HCOL.active,"still active"],[HCOL.left,"left"]];
-  const legend=`<div class="legend">${legendItems.map(([c,l])=>`<span><i style="background:${c}"></i>${esc(l)}</span>`).join("")}</div>`;
+  const C=HEALTH.cohorts, rows=C.cohorts.filter(c=>c.n>=5);
   const cohortPick=C.survival.map(s=>`<button class="${HCOHORT==s.intake?'on':''}" onclick="setHCohort(${s.intake})">${s.intake} (n=${s.n})</button>`).join("");
-  const sv=C.survival.find(s=>s.intake==HCOHORT)||C.survival.slice(-1)[0];
-  const survival=sv?svgSurvival(sv,C.regulation_years):'<div class="empty">No cohort large enough to trace.</div>';
   const tb=rows.map(c=>{const b=c.bands;return `<tr><td><b>${c.intake}</b>${c.mature?'':' <span class="tag">running</span>'}</td><td>${c.n}</td><td>${c.completed}</td><td>${c.completion_rate}%</td><td>${b.regulation}</td><td>${b['reg+1yr']}</td><td>${b['reg+2yr']}</td><td>${b['reg+3yr']}</td><td>${b['reg+4yr+']}</td><td>${c.active}</td><td>${c.left}</td></tr>`;}).join("");
   return `<div class="hsec"><h2 style="margin-top:0">Throughput \u2014 intake to outcome</h2>
-    <div class="card"><h2>Every cohort\u2019s outcome</h2>${legend}${svgStacked(segRows)}
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">Each bar is one intake cohort. \u201cRegulation\u201d = finished within ${C.regulation_years} years (${C.regulation_semesters} semesters); later bands are years beyond that. Recent cohorts are still running.</div></div>
-    <div class="card"><h2>Cohort survival \u2014 registered vs graduated</h2><div class="htab">${cohortPick}</div>${survival}</div>
+    <div class="card"><h2>Every cohort\u2019s outcome</h2>
+      <div class="cwrap" style="height:${Math.max(240,rows.length*34)}px"><canvas id="c-thr"></canvas></div>
+      <div class="note">Each bar is one intake cohort. \u201cRegulation\u201d = finished within ${C.regulation_years} years (${C.regulation_semesters} semesters); later bands are years beyond that. Click a band in the legend to toggle it. Recent cohorts are still running.</div></div>
+    <div class="card"><h2>Cohort survival \u2014 registered vs graduated</h2><div class="htab">${cohortPick}</div>
+      <div class="cwrap" style="height:300px"><canvas id="c-surv"></canvas></div></div>
     <div class="card"><h2>The cohort table</h2><table class="mtab"><thead><tr><th>Intake</th><th>n</th><th>Finished</th><th>Rate</th><th>On&nbsp;time</th><th>+1yr</th><th>+2yr</th><th>+3yr</th><th>+4yr+</th><th>Active</th><th>Left</th></tr></thead><tbody>${tb}</tbody></table></div></div>`;
 }
+function mountThroughput(){
+  const C=HEALTH.cohorts, bands=C.bands, rows=C.cohorts.filter(c=>c.n>=5);
+  const segs=[...bands.map((b,i)=>({key:b,label:b,color:BANDCOL[i]})),
+              {key:"active",label:"still active",color:HCOL.active},{key:"left",label:"left",color:HCOL.left}];
+  const datasets=segs.map(s=>({label:s.label,backgroundColor:s.color,borderWidth:0,
+    data:rows.map(c=> s.key==="active"?c.active : s.key==="left"?c.left : c.bands[s.key])}));
+  newChart("c-thr",{type:"bar",data:{labels:rows.map(c=>c.intake+" \u00b7 n="+c.n),datasets},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,animation:{duration:450},
+      plugins:{legend:legend(true),tooltip:{callbacks:{label:i=>i.parsed.x?` ${i.dataset.label}: ${i.parsed.x}`:null}}},
+      scales:{x:Object.assign({stacked:true},xLin("students")),y:Object.assign({stacked:true},yCat())}}});
+  const sv=C.survival.find(s=>s.intake==HCOHORT)||C.survival.slice(-1)[0];
+  if(sv){ const regYr=sv.series[0].year+C.regulation_years;
+    newChart("c-surv",{type:"line",data:{labels:sv.series.map(p=>p.year),datasets:[
+        {label:"registered",data:sv.series.map(p=>p.registered),borderColor:HCOL.blue,backgroundColor:HCOL.blue,tension:.25,pointRadius:3,borderWidth:2.5},
+        {label:"graduated (cum.)",data:sv.series.map(p=>p.graduated),borderColor:HCOL.green,backgroundColor:HCOL.green,tension:.25,pointRadius:3,borderWidth:2.5}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:{duration:450},interaction:{mode:"index",intersect:false},
+        plugins:{legend:legend(true),vline:{value:regYr,label:"regulation",color:HCOL.amber},tooltip:{}},
+        scales:{x:xCat(),y:yLin("headcount")}}});
+  }
+}
 function setHCohort(y){ HCOHORT=y; renderHealthMain(); }
+
+/* ---- Time to degree ---- */
 function hTTD(){
   const t=HEALTH.cohorts.time_to_degree, reg=HEALTH.cohorts.regulation_semesters;
-  const data=t.distribution.map(x=>({label:x.semesters,value:x.n,color:x.semesters<=reg?HCOL.green:(x.semesters<=reg+2?HCOL.amber:HCOL.red),title:`${x.n} finished in ${x.semesters} semesters`}));
   return `<div class="hsec"><h2 style="margin-top:0">Time to degree</h2>
-    <div class="card">${svgHist(data,{ref:reg,refLabel:"regulation ("+reg+" sem)",unit:"finishers"})}
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">Elapsed semesters from a finisher\u2019s first cycle to completion. ${t.on_time} of ${t.n_finishers} finished within the ${reg}-semester regulation time; median ${t.median_semesters} semesters.</div></div></div>`;
+    <div class="card"><div class="cwrap" style="height:300px"><canvas id="c-ttd"></canvas></div>
+      <div class="note">Elapsed semesters from a finisher\u2019s first cycle to completion. ${t.on_time} of ${t.n_finishers} finished within the ${reg}-semester regulation time; median ${t.median_semesters} semesters.</div></div></div>`;
 }
+function mountTTD(){
+  const t=HEALTH.cohorts.time_to_degree, reg=HEALTH.cohorts.regulation_semesters, d=t.distribution;
+  newChart("c-ttd",{type:"bar",
+    data:{labels:d.map(x=>x.semesters),datasets:[{data:d.map(x=>x.n),borderRadius:3,
+      backgroundColor:d.map(x=>x.semesters<=reg?HCOL.green:(x.semesters<=reg+2?HCOL.amber:HCOL.red))}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:450},
+      plugins:{legend:legend(false),vline:{value:reg,dx:16,label:"regulation",color:HCOL.amber},
+        tooltip:{callbacks:{label:i=>` ${i.parsed.y} finished in ${d[i.dataIndex].semesters} semesters`}}},
+      scales:{x:xCat("semesters to finish"),y:yLin("finishers")}}});
+}
+
+/* ---- Module health ---- */
 function hModules(){
   let mods=HEALTH.modules.slice();
   if(MFILTER==="gatekeepers") mods=mods.filter(m=>m.ranked);
@@ -875,78 +950,36 @@ function hModules(){
     return `<tr><td><code>${esc(m.code)}</code>${tag}<div style="font-size:11px;color:var(--muted)">${esc(m.name||"")}</div></td>
       <td>${m.enrolled}</td><td>${m.passed}</td><td>${m.failed}</td><td>${m.fail_rate!=null?m.fail_rate:"\u2014"}${cb}</td>
       <td>${m.completion_rate??"\u2014"}</td><td>${m.mean??"\u2014"}</td><td>${m.repeat_rate}</td><td>${m.blocking}</td><td>${m.ranked?m.score:"\u2014"}</td><td>${sparkline(m.trend)}</td></tr>`;}).join("");
-  const gk=HEALTH.gatekeepers.slice(0,10);
-  const bars=svgHBars(gk.map(g=>({label:g.code,value:g.score,color:sev(g.fail_rate),
-    title:`${g.code} ${g.name}\nfail ${g.fail_rate}% \u00b7 ${g.failed}/${g.enrolled} \u00b7 blocks ${g.blocking}\nscore ${g.score}`,right:String(g.score)})),{unit:"gatekeeper score"});
   return `<div class="hsec"><h2 style="margin-top:0">Module health</h2>
-    <div class="card"><h2>Gatekeepers \u2014 by score (fail rate \u00d7 students stalled \u00d7 downstream reach)</h2>${bars}</div>
+    <div class="card"><h2>Gatekeepers \u2014 by score (fail rate \u00d7 students stalled \u00d7 downstream reach)</h2>
+      <div class="cwrap" style="height:320px"><canvas id="c-mod-gk"></canvas></div></div>
     <div class="card"><h2>Every module</h2>
       <div class="htab"><button class="${MFILTER==='gatekeepers'?'on':''}" onclick="setMFilter('gatekeepers')">Ranked (\u226510)</button>
         <button class="${MFILTER==='prescribed'?'on':''}" onclick="setMFilter('prescribed')">Prescribed</button>
         <button class="${MFILTER==='all'?'on':''}" onclick="setMFilter('all')">All seen</button></div>
       <table class="mtab"><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table>
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">Pass/fail counts are of settled results; the blocking factor is how many later modules require this one. \u201cScore\u201d ranks only modules with \u226510 settled results. Click a column to sort.</div></div></div>`;
+      <div class="note">Pass/fail counts are of settled results; the blocking factor is how many later modules require this one. \u201cScore\u201d ranks only modules with \u226510 settled results. Click a column to sort.</div></div></div>`;
+}
+function mountModules(){
+  const gk=HEALTH.gatekeepers.slice(0,10);
+  newChart("c-mod-gk",{type:"bar",
+    data:{labels:gk.map(g=>g.code),datasets:[{data:gk.map(g=>g.score),backgroundColor:gk.map(g=>sev(g.fail_rate)),borderRadius:3}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,animation:{duration:450},
+      plugins:{legend:legend(false),tooltip:{callbacks:{
+        title:i=>gk[i[0].dataIndex].code,
+        label:i=>{const g=gk[i.dataIndex];return [` ${g.name}`,` fail ${g.fail_rate}% \u00b7 ${g.failed}/${g.enrolled}`,` blocks ${g.blocking} \u00b7 score ${g.score}`];}}}},
+      scales:{x:xLin("gatekeeper score"),y:yCat()}}});
 }
 function setMFilter(f){ MFILTER=f; renderHealthMain(); }
 function sortModules(k){ if(MSORT.key===k) MSORT.asc=!MSORT.asc; else {MSORT.key=k; MSORT.asc=false;} renderHealthMain(); }
 
-/* ---- dependency-free SVG charts (native <title> tooltips) ---- */
-function svgBars(data,opt){opt=opt||{};const W=720,H=260,padL=44,padR=12,padT=18,padB=34,n=data.length;
-  if(!n) return '<div class="empty">No data.</div>';
-  const max=Math.max(1,...data.map(d=>d.value)),iw=W-padL-padR,ih=H-padT-padB,bw=iw/n,bar=Math.min(46,bw*0.7),yv=v=>padT+ih-(v/max)*ih;let g="";
-  for(let i=0;i<=4;i++){const gv=max*i/4,gy=yv(gv);g+=`<line class="gl" x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}"/><text class="ax" x="${padL-6}" y="${gy+3}" text-anchor="end">${R(gv)}</text>`;}
-  data.forEach((d,i)=>{const cx=padL+bw*i+bw/2,top=yv(d.value),h=padT+ih-top;
-    g+=`<rect class="bar" x="${cx-bar/2}" y="${top}" width="${bar}" height="${Math.max(0,h)}" rx="3" fill="${d.color||HCOL.accent}"><title>${esc(d.title||d.label+": "+d.value)}</title></rect>`;
-    g+=`<text class="vlab" x="${cx}" y="${top-4}" text-anchor="middle">${d.value}</text><text class="ax" x="${cx}" y="${H-padB+14}" text-anchor="middle">${esc(String(d.label))}</text>`;});
-  if(opt.unit) g+=`<text class="ax" x="${padL}" y="12">${esc(opt.unit)}</text>`;
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;}
-function svgHBars(data,opt){opt=opt||{};const n=data.length;if(!n) return '<div class="empty">No data.</div>';
-  const rowH=26,padL=74,padR=52,padT=6,W=720,H=padT*2+n*rowH+(opt.unit?12:0),max=opt.max||Math.max(1,...data.map(d=>d.value)),iw=W-padL-padR;let g="";
-  data.forEach((d,i)=>{const y=padT+i*rowH,bw=(d.value/max)*iw;
-    g+=`<text class="ax" x="${padL-6}" y="${y+rowH/2+3}" text-anchor="end">${esc(d.label)}</text>`;
-    g+=`<rect class="bar" x="${padL}" y="${y+3}" width="${Math.max(1,bw)}" height="${rowH-8}" rx="3" fill="${d.color||HCOL.blue}"><title>${esc(d.title||d.label+": "+d.value)}</title></rect>`;
-    g+=`<text class="vlab" x="${padL+Math.max(1,bw)+5}" y="${y+rowH/2+3}">${esc(d.right!=null?d.right:d.value)}</text>`;});
-  if(opt.unit) g+=`<text class="ax" x="${padL}" y="${H-1}">${esc(opt.unit)}</text>`;
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;}
-function svgStacked(rows){const n=rows.length;if(!n) return '<div class="empty">No cohorts.</div>';
-  const rowH=30,padL=90,padR=10,padT=6,W=720,H=padT*2+n*rowH,max=Math.max(1,...rows.map(r=>r.total)),iw=W-padL-padR;let g="";
-  rows.forEach((r,i)=>{const y=padT+i*rowH;let x=padL;
-    g+=`<text class="ax" x="${padL-6}" y="${y+rowH/2+3}" text-anchor="end">${esc(r.label)}</text>`;
-    r.segs.forEach(s=>{if(!s.value)return;const w=(s.value/max)*iw;
-      g+=`<rect class="bar" x="${x}" y="${y+4}" width="${w}" height="${rowH-10}" fill="${s.color}"><title>${esc(r.meta.intake+" \u00b7 "+s.label+": "+s.value)}</title></rect>`;
-      if(w>18) g+=`<text x="${x+w/2}" y="${y+rowH/2+3}" text-anchor="middle" style="fill:#fff;font-size:10px">${s.value}</text>`;x+=w;});});
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;}
-function svgSurvival(s,regYears){const W=720,H=260,padL=44,padR=16,padT=18,padB=34,pts=s.series;
-  if(!pts.length) return '<div class="empty">No data.</div>';
-  const iw=W-padL-padR,ih=H-padT-padB,max=Math.max(1,...pts.map(p=>p.registered)),xs=i=>padL+(pts.length<=1?0:i/(pts.length-1)*iw),ys=v=>padT+ih-(v/max)*ih;let g="";
-  for(let i=0;i<=4;i++){const gv=max*i/4,gy=ys(gv);g+=`<line class="gl" x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}"/><text class="ax" x="${padL-6}" y="${gy+3}" text-anchor="end">${R(gv)}</text>`;}
-  const regYr=pts[0].year+regYears,ri=pts.findIndex(p=>p.year===regYr);
-  if(ri>=0){const rx=xs(ri);g+=`<line x1="${rx}" y1="${padT}" x2="${rx}" y2="${padT+ih}" stroke="${HCOL.amber}" stroke-width="1" stroke-dasharray="4 3"/><text class="ax" x="${rx}" y="${padT-6}" text-anchor="middle" style="fill:${HCOL.amber}">regulation</text>`;}
-  const line=(key,col)=>{let d="";pts.forEach((p,i)=>{d+=(i?"L":"M")+xs(i)+" "+ys(p[key])+" ";});
-    g+=`<path d="${d}" fill="none" stroke="${col}" stroke-width="2.5"/>`;
-    pts.forEach((p,i)=>{g+=`<circle class="pt" cx="${xs(i)}" cy="${ys(p[key])}" r="3.5" fill="${col}"><title>${p.year}: ${p[key]} ${key}</title></circle>`;});};
-  line("registered",HCOL.blue); line("graduated",HCOL.green);
-  pts.forEach((p,i)=>{g+=`<text class="ax" x="${xs(i)}" y="${H-padB+14}" text-anchor="middle">${p.year}</text>`;});
-  g+=`<text class="ax" x="${padL}" y="12">headcount</text>`;
-  g+=`<rect x="${W-150}" y="${padT}" width="10" height="10" fill="${HCOL.blue}"/><text class="ax" x="${W-136}" y="${padT+9}">registered</text><rect x="${W-150}" y="${padT+15}" width="10" height="10" fill="${HCOL.green}"/><text class="ax" x="${W-136}" y="${padT+24}">graduated (cum.)</text>`;
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;}
-function svgHist(data,opt){opt=opt||{};const W=720,H=260,padL=44,padR=12,padT=18,padB=40,n=data.length;
-  if(!n) return '<div class="empty">No finishers with a datable cycle yet.</div>';
-  const max=Math.max(1,...data.map(d=>d.value)),iw=W-padL-padR,ih=H-padT-padB,bw=iw/n,bar=Math.min(46,bw*0.72),yv=v=>padT+ih-(v/max)*ih;let g="";
-  for(let i=0;i<=4;i++){const gv=max*i/4,gy=yv(gv);g+=`<line class="gl" x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}"/><text class="ax" x="${padL-6}" y="${gy+3}" text-anchor="end">${R(gv)}</text>`;}
-  data.forEach((d,i)=>{const cx=padL+bw*i+bw/2,top=yv(d.value),h=padT+ih-top;
-    g+=`<rect class="bar" x="${cx-bar/2}" y="${top}" width="${bar}" height="${Math.max(0,h)}" rx="3" fill="${d.color||HCOL.accent}"><title>${esc(d.title)}</title></rect>`;
-    g+=`<text class="vlab" x="${cx}" y="${top-4}" text-anchor="middle">${d.value}</text><text class="ax" x="${cx}" y="${H-padB+14}" text-anchor="middle">${esc(String(d.label))}</text>`;});
-  if(opt.ref!=null){const idx=data.findIndex(d=>d.label>opt.ref),rx=idx<0?W-padR:padL+bw*idx;
-    g+=`<line x1="${rx}" y1="${padT}" x2="${rx}" y2="${padT+ih}" stroke="${HCOL.amber}" stroke-width="1.2" stroke-dasharray="4 3"/><text class="ax" x="${rx+3}" y="${padT+9}" style="fill:${HCOL.amber}">${esc(opt.refLabel||"")}</text>`;}
-  if(opt.unit) g+=`<text class="ax" x="${padL}" y="12">${esc(opt.unit)}</text>`;
-  g+=`<text class="ax" x="${W/2}" y="${H-4}" text-anchor="middle">semesters to finish</text>`;
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;}
-function sparkline(trend){if(!trend||trend.length<2) return '<span style="color:var(--muted)">\u2014</span>';
+/* tiny inline trend glyph for the module table (a micro-indicator, not a chart) */
+function sparkline(trend){ if(!trend||trend.length<2) return '<span style="color:var(--muted)">\u2014</span>';
   const W=64,H=18,pad=2,xs=i=>pad+(trend.length<=1?0:i/(trend.length-1)*(W-2*pad)),ys=v=>H-pad-(v/100)*(H-2*pad);
   let d="";trend.forEach((p,i)=>{d+=(i?"L":"M")+xs(i).toFixed(1)+" "+ys(p.pass_rate).toFixed(1)+" ";});
   const last=trend[trend.length-1].pass_rate,col=last>=70?HCOL.green:last>=50?HCOL.amber:HCOL.red;
-  return `<svg class="spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><title>${esc(trend.map(p=>p.year+":"+p.pass_rate+"%").join("  "))}</title><path d="${d}" fill="none" stroke="${col}" stroke-width="1.5"/><circle cx="${xs(trend.length-1)}" cy="${ys(last)}" r="2" fill="${col}"/></svg>`;}
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="vertical-align:middle"><title>${esc(trend.map(p=>p.year+":"+p.pass_rate+"%").join("  "))}</title><path d="${d}" fill="none" stroke="${col}" stroke-width="1.5"/><circle cx="${xs(trend.length-1)}" cy="${ys(last)}" r="2" fill="${col}"/></svg>`;
+}
 
 boot();
 

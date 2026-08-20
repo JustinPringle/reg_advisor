@@ -200,6 +200,17 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/":
             self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+        elif path.startswith("/vendor/"):
+            # Locally vendored static assets (the chart library), served off
+            # disk -- never a CDN. A traversal guard keeps it inside web/vendor.
+            name = path[len("/vendor/"):]
+            fp = (ROOT / "web" / "vendor" / name).resolve()
+            base = (ROOT / "web" / "vendor").resolve()
+            if base in fp.parents and fp.is_file():
+                ctype = "application/javascript" if fp.suffix == ".js" else "text/plain"
+                self._send(200, fp.read_bytes(), ctype + "; charset=utf-8")
+            else:
+                self._json({"error": "not found"}, 404)
         elif path == "/api/programmes":
             progs = list_programmes(STORE)
             self._json({"programmes": progs, "current": progs[0]["code"] if progs else None})
