@@ -27,11 +27,11 @@
 #     — still open for your sign-off.
 external_prereqs:
   - PHYS110
-  
+
 programme:
   code: ENG-CIVIL
   name: Civil Engineering
-
+regulation_years: 4
 # Augmented <-> mainstream first-year twins (handbook equivalence table). An
 # augmented-entry student who articulates into mainstream Civil sits these eight
 # modules under their augmented codes; each is the handbook equivalent of a

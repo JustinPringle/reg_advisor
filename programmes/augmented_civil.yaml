@@ -36,7 +36,7 @@
 programme:
   code: ENG-CIVIL-AUG
   name: Civil Engineering (Augmented)
-
+regulation_years: 5
 external_prereqs:
   - PHYS110
 # Augmented <-> mainstream twins (handbook equivalence table). Data only.

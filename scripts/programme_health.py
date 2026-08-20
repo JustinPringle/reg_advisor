@@ -111,6 +111,42 @@ def _elapsed_semesters(intake: tuple[int, int], done: tuple[int, int]) -> int:
     return (cy - iy) * 2 + (csem - isem) + 1
 
 
+# --- period window ----------------------------------------------------------
+# A window is ((y0, s0), (y1, s1)), inclusive at both ends, or None for the whole
+# record. Two metrics respond to it differently, by decision (see health()):
+#   * module health and time-to-degree are ACTIVITY-scoped -- a module result or a
+#     completion counts only if its own period sits inside the window.
+#   * intake, throughput and survival are COHORT-anchored -- the window picks which
+#     intake cohorts to show; each shown cohort is then followed through every
+#     block of its life, never truncated at the window edge.
+# Signed off by Justin Pringle, 2026-08-20.
+Window = tuple[tuple[int, int], tuple[int, int]]
+
+
+def _period_ord(year: int, sem: int) -> int:
+    """A total order on academic periods: 2024 S1 < 2024 S2 < 2025 S1."""
+    return year * 2 + (sem - 1)
+
+
+def _win_ord(window: Window | None) -> tuple[int, int] | None:
+    if not window:
+        return None
+    (y0, s0), (y1, s1) = window
+    lo, hi = _period_ord(y0, s0), _period_ord(y1, s1)
+    return (lo, hi) if lo <= hi else (hi, lo)      # tolerate a reversed pick
+
+
+def _in_window(year: int | None, sem: int | None,
+               win_ord: tuple[int, int] | None) -> bool:
+    """Is (year, sem) inside the window? No window admits everything; a windowed
+    call rejects any row it cannot place, so an undatable row never leaks in."""
+    if win_ord is None:
+        return True
+    if year is None or sem is None:
+        return False
+    return win_ord[0] <= _period_ord(year, sem) <= win_ord[1]
+
+
 # --- intake -----------------------------------------------------------------
 def intake_years(results_by_sn: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
     """Each student's intake year: the earliest year they hold a result. See the
@@ -126,7 +162,8 @@ def intake_years(results_by_sn: dict[str, list[dict[str, Any]]]) -> dict[str, in
 # --- module health ----------------------------------------------------------
 def module_stats(cur: dict[str, Any],
                  results_by_sn: dict[str, list[dict[str, Any]]],
-                 min_enrol: int = DEFAULT_MIN_ENROL) -> list[dict[str, Any]]:
+                 min_enrol: int = DEFAULT_MIN_ENROL,
+                 window: Window | None = None) -> list[dict[str, Any]]:
     """Every module seen in the record, with its pass/fail picture, mean mark,
     repeat burden, blocking factor and a gatekeeper score.
 
@@ -142,6 +179,7 @@ def module_stats(cur: dict[str, Any],
     # blocking is keyed on the catalogue's own code form; map onto core codes.
     block_by_core = {R.core_code(k, core_len): v for k, v in blocking.items()}
 
+    win = _win_ord(window)
     agg: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"enrolled": 0, "passed": 0, "failed": 0, "pending": 0,
                  "marks": [], "students": set(), "attempts": defaultdict(int),
@@ -150,6 +188,11 @@ def module_stats(cur: dict[str, Any],
         for r in rows:
             code = R.core_code(_code_of(r), core_len)
             if not code:
+                continue
+            # Module health is activity-scoped: only results sat inside the window.
+            if win is not None and not _in_window(
+                    _yr(r.get("calendar_year")),
+                    semester_of_block(r.get("block")), win):
                 continue
             outcome = _row_outcome(r)
             if outcome == "ungraded":
@@ -231,7 +274,8 @@ def cohort_analysis(cur: dict[str, Any],
                     results_by_sn: dict[str, list[dict[str, Any]]],
                     bio: dict[str, dict[str, Any]],
                     regulation_years: int = DEFAULT_REGULATION_YEARS,
-                    current_year: int | None = None) -> dict[str, Any]:
+                    current_year: int | None = None,
+                    window: Window | None = None) -> dict[str, Any]:
     """Intake cohorts followed to their outcome: the throughput table, the
     per-cohort survival curve, and the time-to-degree spread.
 
@@ -239,10 +283,22 @@ def cohort_analysis(cur: dict[str, Any],
     Completion tab shows. A student who has not finished is "active" if they hold
     a result in the last two years, otherwise "left". Time-to-degree is measured
     in elapsed semesters from a finisher's first cycle to their completion cycle.
+
+    A window keeps intake, throughput and survival cohort-anchored: it selects the
+    intake cohorts to show (those entering within the window's year span), then
+    follows each through every block of its life. Time-to-degree and the finish
+    totals are activity-scoped instead -- they count degrees completed inside the
+    window. `cy` is always the real latest year, so a shown cohort's trajectory is
+    never cut short at the window edge.
     """
     reg_sem = regulation_years * 2
+    win = _win_ord(window)
     intake = intake_years(results_by_sn)
     years = sorted({y for y in intake.values()})
+    if window:                                  # cohort-anchored: pick intakes in span
+        (y0, _), (y1, _) = window
+        lo_y, hi_y = min(y0, y1), max(y0, y1)
+        years = [y for y in years if lo_y <= y <= hi_y]
     all_years = sorted({y for rows in results_by_sn.values() for y in _active_years(rows)})
     cy = current_year or (all_years[-1] if all_years else None)
 
@@ -266,7 +322,8 @@ def cohort_analysis(cur: dict[str, Any],
             tt[sn] = {"intake": fc[0], "elapsed_semesters": elapsed,
                       "elapsed_years": ceil(elapsed / 2),
                       "registered_semesters": registered,
-                      "on_time": elapsed <= reg_sem, "kind": r["kind"]}
+                      "on_time": elapsed <= reg_sem, "kind": r["kind"],
+                      "in_window": _in_window(cyr, csem, win)}
 
     # Throughput table: one row per intake cohort, banded by time to finish.
     bands = ["regulation", "reg+1yr", "reg+2yr", "reg+3yr", "reg+4yr+"]
@@ -323,17 +380,24 @@ def cohort_analysis(cur: dict[str, Any],
             series.append({"year": y, "registered": reg, "graduated": grad})
         survival.append({"intake": iy, "n": len(members), "series": series})
 
-    # Time-to-degree distribution (all finishers with a datable cycle).
+    # Time-to-degree distribution: activity-scoped to degrees COMPLETED in the
+    # window (no window admits every finisher). Undatable completions never enter.
+    tt_win = [v for v in tt.values() if v["in_window"]]
     dist: dict[int, int] = defaultdict(int)
-    for v in tt.values():
+    for v in tt_win:
         dist[v["elapsed_semesters"]] += 1
-    ttd = sorted(v["elapsed_semesters"] for v in tt.values())
+    ttd = sorted(v["elapsed_semesters"] for v in tt_win)
     median = ttd[len(ttd) // 2] if ttd else None
+
+    # Finish totals are activity-scoped the same way.
+    fin_win = [r for r in finished.values()
+               if _in_window(r.get("completed_year"), r.get("completed_semester"), win)]
 
     return {
         "regulation_years": regulation_years,
         "regulation_semesters": reg_sem,
         "current_year": cy,
+        "window": [list(window[0]), list(window[1])] if window else None,
         "intake_by_year": {str(y): sum(1 for v in intake.values() if v == y)
                            for y in years},
         "cohorts": cohorts,
@@ -342,13 +406,14 @@ def cohort_analysis(cur: dict[str, Any],
         "time_to_degree": {
             "distribution": [{"semesters": k, "n": dist[k]} for k in sorted(dist)],
             "median_semesters": median,
-            "n_finishers": len(tt),
-            "on_time": sum(1 for v in tt.values() if v["on_time"]),
+            "n_finishers": len(tt_win),
+            "on_time": sum(1 for v in tt_win if v["on_time"]),
         },
         "totals": {
             "students": len(results_by_sn),
-            "finished": len(finished),
-            "dc": len(lists["DC"]), "dgor": len(lists["DGOR"]),
+            "finished": len(fin_win),
+            "dc": sum(1 for r in fin_win if r["kind"] == "DC"),
+            "dgor": sum(1 for r in fin_win if r["kind"] == "DGOR"),
         },
     }
 
@@ -357,17 +422,24 @@ def cohort_analysis(cur: dict[str, Any],
 def health(cur: dict[str, Any],
            results_by_sn: dict[str, list[dict[str, Any]]],
            bio: dict[str, dict[str, Any]],
-           min_enrol: int = DEFAULT_MIN_ENROL) -> dict[str, Any]:
+           min_enrol: int = DEFAULT_MIN_ENROL,
+           window: Window | None = None) -> dict[str, Any]:
     """The whole picture, ready for JSON: overview KPIs, intake, throughput,
-    time-to-degree, and module health."""
+    time-to-degree, and module health.
+
+    A window ((y0, s0), (y1, s1)) scopes the read-out to a period -- module health
+    and time-to-degree to activity inside it, intake and survival to the cohorts
+    that entered in it, each still tracked through every block. None reads the
+    whole record and is exactly the old behaviour. This drives the ECSA period
+    report, whose windows run e.g. 2026 S2 -> 2029 S1."""
     prog = cur.get("programme", {})
     reg_years = int(prog.get("regulation_years") or DEFAULT_REGULATION_YEARS)
     all_years = sorted({y for rows in results_by_sn.values()
                         for y in _active_years(rows)})
     cy = all_years[-1] if all_years else None
 
-    cohorts = cohort_analysis(cur, results_by_sn, bio, reg_years, cy)
-    mods = module_stats(cur, results_by_sn, min_enrol)
+    cohorts = cohort_analysis(cur, results_by_sn, bio, reg_years, cy, window)
+    mods = module_stats(cur, results_by_sn, min_enrol, window)
     gks = gatekeepers(mods)
 
     current_head = sum(1 for rows in results_by_sn.values()
@@ -377,6 +449,7 @@ def health(cur: dict[str, Any],
 
     return {
         "ready": True,
+        "window": ([list(window[0]), list(window[1])] if window else None),
         "programme": {"code": prog.get("code", ""), "name": prog.get("name", ""),
                       "total_credits": prog.get("total_credits"),
                       "regulation_years": reg_years},
