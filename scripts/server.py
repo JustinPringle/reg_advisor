@@ -13,7 +13,8 @@ database and refreshes the picker. No student data leaves the machine.
     GET  /api/students/<sn>?programme=   one student: profile, standing, advice
     POST /api/check               {programme, sn, codes} -> CLEARED / REVIEW
     POST /api/ingest              multipart: file, programme, name, yaml -> ingest
-    GET  /api/health?programme=   programme-health analytics (intake, throughput, modules)
+    GET  /api/health?programme=&y0=&s0=&y1=&s1=   programme-health analytics; the
+                                  optional y0/s0..y1/s1 window scopes it to a period
     GET  /api/triage?programme=   the batched concession queue
     GET  /api/decisions           decisions recorded so far
     POST /api/decide              {sn, code, decision, note, by} -> record a decision
@@ -223,7 +224,17 @@ class Handler(BaseHTTPRequestHandler):
             self._json(CHK.completion(STORE, self._q("programme"),
                                       self._q("year"), self._q("sem")))
         elif path == "/api/health":
-            self._json(CHK.health(STORE, self._q("programme")))
+            # Optional period window for the ECSA report: y0/s0 (from) .. y1/s1 (to),
+            # inclusive. All four must be present, else the whole record is read.
+            y0, s0 = self._q("y0"), self._q("s0")
+            y1, s1 = self._q("y1"), self._q("s1")
+            win = None
+            if y0 and s0 and y1 and s1:
+                try:
+                    win = ((int(y0), int(s0)), (int(y1), int(s1)))
+                except ValueError:
+                    win = None
+            self._json(CHK.health(STORE, self._q("programme"), window=win))
         elif path == "/api/erscheck":
             src = source(self._q("programme"))
             year, sem = self._q("year"), self._q("sem")

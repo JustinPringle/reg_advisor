@@ -212,7 +212,10 @@ let DECIDER=""; try{ DECIDER=localStorage.getItem("regadvisor_decider")||""; }ca
 function setDecider(v){ DECIDER=(v||"").trim(); try{ localStorage.setItem("regadvisor_decider",DECIDER); }catch(e){} }
 const MODES=["advisor","cohort","completion","health"];
 let HEALTH=null, HSECTION="overview", MSORT={key:"score",asc:false}, MFILTER="gatekeepers", HCOHORT=null;
+let HWIN=null, HCYCLES=null;   // health period window {y0,s0,y1,s1} or null (all periods); the period universe
 const pq = extra => "?programme="+encodeURIComponent(PROGRAMME||"")+(extra||"");
+/* The health window as a query tail; empty when "All periods". */
+const hwq = () => HWIN ? "&y0="+HWIN.y0+"&s0="+HWIN.s0+"&y1="+HWIN.y1+"&s1="+HWIN.s1 : "";
 const cq = () => CYCLE ? "&year="+encodeURIComponent(CYCLE.year)+"&sem="+encodeURIComponent(CYCLE.semester) : "";
 const cycleLabel = c => c ? c.year+" \u00b7 Sem "+c.semester : "\u2014";
 const BADGE={green:"b-green",orange:"b-orange",red:"b-red",exclude:"b-exclude",none:"b-gray",unknown:"b-gray",review:"b-blue"};
@@ -258,6 +261,7 @@ async function loadCycles(){
        :(CYCLES[0]?{year:CYCLES[0].year,semester:CYCLES[0].semester}:null);
 }
 async function switchProgramme(code){ PROGRAMME=code; MODE="advisor"; RUN=null; RUNDATA=null;
+  HEALTH=null; HWIN=null; HCYCLES=null; HCOHORT=null;   // health state is per-programme
   for(const x of MODES) $("#m-"+x).classList.toggle("on", x==="advisor");
   await loadStudents(); await loadCycles(); renderSide();
   $("#main").innerHTML='<div class="empty">Pick a student to see their standing, grades, and advice.</div>'; }
@@ -810,7 +814,8 @@ const legend=on=>({display:on,position:"top",labels:{color:tickC,font:CFONT,boxW
 async function loadHealth(){
   $("#side").innerHTML='<div class="empty">Loading\u2026</div>';
   $("#main").innerHTML='<div class="empty">Reading the record\u2026</div>';
-  try{ HEALTH=await (await fetch("/api/health"+pq())).json(); }catch(e){ HEALTH=null; }
+  if(HCYCLES===null){ try{ HCYCLES=(await (await fetch("/api/cycles"+pq())).json()).cycles||[]; }catch(e){ HCYCLES=[]; } }
+  try{ HEALTH=await (await fetch("/api/health"+pq()+hwq())).json(); }catch(e){ HEALTH=null; }
   if(!HEALTH||!HEALTH.ready){ destroyCharts();
     $("#side").innerHTML='<div class="empty">Health unavailable.</div>';
     $("#main").innerHTML='<div class="empty">Programme health needs the programme\u2019s rule file.<br>Author its YAML, then reload.</div>';
@@ -823,11 +828,50 @@ function renderHealthSide(){
   const nav=HSECTIONS.map(([id,lab])=>`<div class="hlink ${HSECTION===id?'on':''}" onclick="hgoto('${id}')">${lab}</div>`).join("");
   const o=HEALTH.overview, p=HEALTH.programme;
   $("#side").innerHTML=`<div class="hnav">${nav}
+    <div class="hnote">Period</div>
+    ${hWinControl()}
     <div class="hnote">Programme</div>
     <div style="font-size:12px;color:var(--muted);padding:0 2px;line-height:1.5">${esc(p.name)}<br>${p.regulation_years}-year \u00b7 ${p.total_credits||"\u2014"} credits<br>data to ${o.current_year} \u00b7 ${o.students} students</div>
     <div class="hnote">Note</div>
     <div style="font-size:11px;color:var(--muted);padding:0 2px;line-height:1.5">Every figure is counted from the captured record. \u201cFinished\u201d is the same list the Completion tab shows.</div></div>`;
 }
+/* From/To period picker. "All periods" reads the whole record; a window scopes
+   module health and time-to-degree to activity inside it, and shows the cohorts
+   that entered in it, each still tracked to the latest year. Year options run a
+   few years past the data so an ECSA window (e.g. 2026 S2 -> 2029 S1) is pickable. */
+function hWinYears(){
+  const ys=(HCYCLES||[]).map(c=>Number(c.year)).filter(Number.isFinite);
+  const lo=ys.length?Math.min(...ys):(HEALTH.overview.current_year||new Date().getFullYear());
+  const hi=(ys.length?Math.max(...ys):(HEALTH.overview.current_year||new Date().getFullYear()))+5;
+  const out=[]; for(let y=hi;y>=lo;y--) out.push(y); return out;
+}
+function hWinControl(){
+  const on=!!HWIN, yrs=hWinYears();
+  const yopt=(sel)=>yrs.map(y=>`<option value="${y}"${y===sel?" selected":""}>${y}</option>`).join("");
+  const sopt=(sel)=>[1,2].map(s=>`<option value="${s}"${s===sel?" selected":""}>S${s}</option>`).join("");
+  const toggle=`<div class="htab" style="margin:2px 0 6px">
+    <button class="${on?'':'on'}" onclick="hWinAll()">All periods</button>
+    <button class="${on?'on':''}" onclick="hWinOn()">Window</button></div>`;
+  if(!on) return toggle;
+  const C=HEALTH.cohorts, nCoh=Object.keys(C.intake_by_year).length;
+  const status = nCoh
+    ? `${nCoh} cohort${nCoh===1?"":"s"} \u00b7 ${C.totals.finished} finished \u00b7 ${HEALTH.overview.modules_seen} modules in window`
+    : "No cohort entered in this period.";
+  return toggle+`<div style="font-size:11px;color:var(--muted);line-height:1.9;padding:0 2px">
+    <div>From&nbsp;
+      <select onchange="hWinSet('y0',this.value)">${yopt(HWIN.y0)}</select>
+      <select onchange="hWinSet('s0',this.value)">${sopt(HWIN.s0)}</select></div>
+    <div>To&nbsp;&nbsp;&nbsp;&nbsp;
+      <select onchange="hWinSet('y1',this.value)">${yopt(HWIN.y1)}</select>
+      <select onchange="hWinSet('s1',this.value)">${sopt(HWIN.s1)}</select></div>
+    <div style="margin-top:5px;color:var(--ink)">${status}</div></div>`;
+}
+function hWinAll(){ HWIN=null; HCOHORT=null; loadHealth(); }
+function hWinOn(){                       // open a window, defaulting to the data's own span
+  const yrs=hWinYears(), lo=Math.min(...yrs), cur=HEALTH.overview.current_year||Math.max(...yrs);
+  HWIN={y0:lo,s0:1,y1:cur,s1:2}; HCOHORT=null; loadHealth();
+}
+function hWinSet(field,val){ HWIN={...HWIN,[field]:Number(val)}; HCOHORT=null; loadHealth(); }
 function hgoto(s){ HSECTION=s; renderHealthSide(); renderHealthMain(); $("#main").scrollTop=0; }
 function renderHealthMain(){
   destroyCharts();

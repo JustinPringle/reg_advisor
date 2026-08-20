@@ -191,32 +191,21 @@ def student_detail(store: Any, programme: str, sn: str,
             "decisions": decisions}
 
 
-def health(store: Any, programme: str, min_enrol: int = 10) -> dict[str, Any]:
+def health(store: Any, programme: str, min_enrol: int = 10,
+           window: tuple[tuple[int, int], tuple[int, int]] | None = None) -> dict[str, Any]:
     """The programme-health read-out: intake, throughput, time-to-degree, and
     module health. A pure aggregate of the captured record against the
     programme's own rules -- the same "finished" and "blocking" definitions the
     Completion tab and the advice engine use, so nothing here can disagree with
     them. Returns {"ready": False} until the programme's rule file is authored.
+
+    `window` ((y0, s0), (y1, s1)) scopes the read-out to a period for the ECSA
+    report; None reads the whole record.
     """
     import programme_health as PH
     cur = _load_cur(store, programme)
     if cur is None:
         return {"ready": False}
     bio = {r["student_number"]: r for r in store.students(programme)}
-    return PH.health(cur, store.results(programme), bio, min_enrol=min_enrol)
-
-
-
-
-    """The programme-health read-out: intake, throughput, time-to-degree, and
-    module health. A pure aggregate of the captured record against the
-    programme's own rules -- the same "finished" and "blocking" definitions the
-    Completion tab and the advice engine use, so nothing here can disagree with
-    them. Returns {"ready": False} until the programme's rule file is authored.
-    """
-    import programme_health as PH
-    cur = _load_cur(store, programme)
-    if cur is None:
-        return {"ready": False}
-    bio = {r["student_number"]: r for r in store.students(programme)}
-    return PH.health(cur, store.results(programme), bio, min_enrol=min_enrol)
+    return PH.health(cur, store.results(programme), bio,
+                     min_enrol=min_enrol, window=window)
