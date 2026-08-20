@@ -13,6 +13,7 @@ database and refreshes the picker. No student data leaves the machine.
     GET  /api/students/<sn>?programme=   one student: profile, standing, advice
     POST /api/check               {programme, sn, codes} -> CLEARED / REVIEW
     POST /api/ingest              multipart: file, programme, name, yaml -> ingest
+    GET  /api/health?programme=   programme-health analytics (intake, throughput, modules)
     GET  /api/triage?programme=   the batched concession queue
     GET  /api/decisions           decisions recorded so far
     POST /api/decide              {sn, code, decision, note, by} -> record a decision
@@ -210,6 +211,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/completion":
             self._json(CHK.completion(STORE, self._q("programme"),
                                       self._q("year"), self._q("sem")))
+        elif path == "/api/health":
+            self._json(CHK.health(STORE, self._q("programme")))
         elif path == "/api/erscheck":
             src = source(self._q("programme"))
             year, sem = self._q("year"), self._q("sem")
