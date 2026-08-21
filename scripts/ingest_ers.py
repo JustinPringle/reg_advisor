@@ -20,6 +20,8 @@ import argparse
 import csv
 from pathlib import Path
 
+import yaml
+
 from ers_ingest import parse_file
 from store import Store
 
@@ -62,13 +64,34 @@ def parse_csv(path: str, programme: str) -> dict[str, list[dict]]:
     return {"students": list(students.values()), "results": results, "decisions": []}
 
 
+
+def streams_from_yaml(yaml_path: str) -> "set[str] | None":
+    """Read ingest.stream_codes from a programme file, or None if absent.
+
+    When a programme's YAML names the streams it owns, a shared feed (the
+    augmented ERS carries every engineering stream) is filtered to just those.
+    Absent the key, nothing is filtered -- a single-stream feed needs no filter.
+    """
+    if not yaml_path or not Path(yaml_path).exists():
+        return None
+    doc = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8")) or {}
+    codes = (doc.get("ingest") or {}).get("stream_codes")
+    return set(codes) if codes else None
+
+
 def ingest_path(db: Store, path: str, programme: str, name: str = "",
                 yaml_path: str = "") -> dict[str, int]:
     """Register the programme and ingest one file (PDF/text or CSV)."""
     db.register_programme(programme, name, yaml_path)
     suffix = Path(path).suffix.lower()
-    parsed = parse_csv(path, programme) if suffix == ".csv" else parse_file(path, programme)
-    return db.ingest(parsed, source=Path(path).name)
+    if suffix == ".csv":
+        parsed = parse_csv(path, programme)
+    else:
+        parsed = parse_file(path, programme, keep_streams=streams_from_yaml(yaml_path))
+    counts = db.ingest(parsed, source=Path(path).name)
+    counts["n_skipped"] = len(parsed.get("skipped", []))
+    counts["skipped"] = parsed.get("skipped", [])
+    return counts
 
 
 def main() -> None:
@@ -85,6 +108,14 @@ def main() -> None:
     print(f"ingested {args.path} -> {args.programme}: "
           f"{counts['n_students']} students, {counts['n_results']} results, "
           f"{counts['n_decisions']} decisions")
+    skipped = counts.get("skipped", [])
+    if skipped:
+        placed = [r for r in skipped if r["stream_codes"]]
+        unplaced = [r for r in skipped if not r["stream_codes"]]
+        print(f"  skipped {len(skipped)} students not in this programme's streams "
+              f"({len(placed)} other-stream, {len(unplaced)} with no stream code)")
+        for r in unplaced:
+            print(f"    no stream code -> review: {r['student_number']}")
     db.close()
 
 

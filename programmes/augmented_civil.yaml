@@ -463,3 +463,11 @@ modules:
 #       not appear in the augmented handbook pages. Omitted here (module and
 #       capstone gate). Confirm where it falls for augmented students.
 # ============================================================================
+
+# ── Ingest scope ──────────────────────────────────────────────────────────────
+# The augmented ERS feed lists every engineering stream (Civil, Mech, Elec, ...).
+# This programme keeps only students whose header carries a Civil stream code.
+# A first-year still carrying two codes (e.g. ENCV ENME) is kept as Civil because
+# ENCV is present — provisional, pending faculty rule. — Justin Pringle 2026-08-21
+ingest:
+  stream_codes: [ENCV]
