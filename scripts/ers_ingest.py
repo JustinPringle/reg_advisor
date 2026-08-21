@@ -41,6 +41,11 @@ DECISION_HISTORY_RE = re.compile(
     r"(\d{4})\s+(S?\d+)\s+[A-Z][A-Z0-9-]{2,}\s+\d{2}-[A-Z]{3}-\d{4}\s+([A-Z0-9]+)\s*:\s*(.*)")
 # Credits earned by study period: "Summary By Study Period : 1: 72 2: 48".
 SUMMARY_RE = re.compile(r"(\d+):\s*(\d+)")
+# A student-header stream code: EN + two letters (ENCV, ENME, ENEL, ENCH ...).
+# It rides on the header line after the name and names the destination stream.
+# "ENGEAP" cannot match (\b needs a boundary after two letters), so the augmented
+# access token is excluded for free.
+STREAM_RE = re.compile(r"\bEN[A-Z]{2}\b")
 
 
 def extract_text(path: str) -> str:
@@ -91,8 +96,16 @@ def _parse_module_line(parts: list[str]) -> Optional[dict]:
             "result_code": result_code, "result_text": result_text}
 
 
-def parse_ers(text: str, programme: str) -> dict[str, list[dict]]:
-    """ERS layout text -> {'students', 'results', 'decisions'} for one programme."""
+def parse_ers(text: str, programme: str,
+              keep_streams: Optional[set[str]] = None) -> dict[str, list[dict]]:
+    """ERS layout text -> {'students', 'results', 'decisions'} for one programme.
+
+    keep_streams, when given, keeps only students whose header stream set meets it
+    (set intersection). A student carrying several streams (a first-year still
+    choosing, e.g. ENCV ENME) is kept if ANY of them is wanted. Students with no
+    readable stream code cannot be placed; they are dropped from the kept set and
+    returned under 'skipped' so the caller can surface them rather than lose them.
+    """
     lines = [ln.rstrip() for ln in text.split("\n")]
     results: list[dict] = []
     decisions: list[dict] = []
@@ -106,6 +119,7 @@ def parse_ers(text: str, programme: str) -> dict[str, list[dict]]:
     pending_rows: list[dict] = []
     period_credits: dict[int, int] = {}
     student_plan: Optional[str] = None   # current plan: the most recent period's
+    student_streams: dict[str, set[str]] = {}   # header stream codes seen per student
 
     def flush() -> None:
         """Stamp the current student's rows with year/credits, then bank them."""
@@ -143,6 +157,9 @@ def parse_ers(text: str, programme: str) -> dict[str, list[dict]]:
                 bits = sm.group(2).replace(",", " ").split()
                 surname = bits[0] if bits else ""
                 name = bits[1] if len(bits) > 1 else ""
+            # Header stream codes ride after the name; read them from the raw line.
+            tail = line.split(sm.group(1), 1)[1]
+            student_streams.setdefault(student, set()).update(STREAM_RE.findall(tail))
             continue
 
         if not student:
@@ -192,10 +209,32 @@ def parse_ers(text: str, programme: str) -> dict[str, list[dict]]:
                     "year_of_study": None, "total_credits": None, **md})
 
     flush()
-    return {"students": list(students.values()),
-            "results": results, "decisions": decisions}
+
+    # Stamp every kept student with the stream codes read from its header.
+    for srec in students.values():
+        srec["stream_codes"] = sorted(student_streams.get(srec["student_number"], set()))
+
+    if keep_streams is None:
+        return {"students": list(students.values()),
+                "results": results, "decisions": decisions, "skipped": []}
+
+    # Keep students whose header streams meet the wanted set; surface the rest.
+    want = set(keep_streams)
+    kept, skipped = set(), []
+    for sn, streams in ((s2["student_number"], set(s2["stream_codes"]))
+                        for s2 in students.values()):
+        if streams & want:
+            kept.add(sn)
+        else:
+            skipped.append({"student_number": sn, "stream_codes": sorted(streams)})
+    return {
+        "students":  [s2 for s2 in students.values()    if s2["student_number"] in kept],
+        "results":   [r  for r  in results               if r["student_number"] in kept],
+        "decisions": [d  for d  in decisions             if d["student_number"] in kept],
+        "skipped":   skipped}
 
 
-def parse_file(path: str, programme: str) -> dict[str, list[dict]]:
+def parse_file(path: str, programme: str,
+               keep_streams: Optional[set[str]] = None) -> dict[str, list[dict]]:
     """Convenience: read a file (PDF or text) and parse it for one programme."""
-    return parse_ers(extract_text(path), programme)
+    return parse_ers(extract_text(path), programme, keep_streams)

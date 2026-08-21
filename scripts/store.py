@@ -119,6 +119,30 @@ class Store:
             self.db.execute("UPDATE programmes SET name=code WHERE name IS NULL OR name=''")
             self.db.commit()
 
+    def remove_programme(self, code: str, keep_registration: bool = False) -> dict[str, Any]:
+        """Delete one programme's data from every table, leaving others untouched.
+
+        Clears students, results, term decisions, the ingest log, and the document
+        records for the programme, then drops its registration so it leaves the
+        picker. Pass keep_registration=True to clear the data but keep the code,
+        name, and yaml on file -- handy before a clean re-ingest. Returns the row
+        count removed per table and the document file paths, which stay on disk for
+        the caller to unlink or keep.
+        """
+        data_tables = ("students", "results", "term_decisions", "ingests", "documents")
+        with self._lock:
+            files = [r["stored_path"] for r in self.db.execute(
+                "SELECT stored_path FROM documents WHERE programme=?", (code,)).fetchall()]
+            removed: dict[str, int] = {}
+            for table in data_tables:
+                cur = self.db.execute(f"DELETE FROM {table} WHERE programme=?", (code,))
+                removed[table] = cur.rowcount
+            if not keep_registration:
+                cur = self.db.execute("DELETE FROM programmes WHERE code=?", (code,))
+                removed["programmes"] = cur.rowcount
+            self.db.commit()
+        return {"removed": removed, "document_files": [f for f in files if f]}
+
     def ingest(self, parsed: dict[str, list[dict]], source: str = "") -> dict[str, int]:
         """Upsert one parsed ERS into the store. Idempotent per semester."""
         now = _now()
