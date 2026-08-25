@@ -376,3 +376,12 @@ modules:
     prereqs:
       - {min_year: 4}           # sheet: only 4th-year registrations permitted
   - {code: "ELECTIVE_Y4S2", name: "Elective", credits: 16, year: 4, sem: 2, type: elective}
+
+# ── Ingest scope ──────────────────────────────────────────────────────────────
+# The mainstream Civil ERS lists augmented (ENGEAP) students in the years their
+# section plan reads ENG-CV — they follow the mainstream curriculum after the
+# augmented foundation. They are owned by ENG-CIVIL-AUG, so defer them here rather
+# than claim them into mainstream. CT-ENG (college transfer) students are genuine
+# mainstream entrants and are kept. — Justin Pringle 2026-08-25
+ingest:
+  exclude_access: [ENGEAP]
