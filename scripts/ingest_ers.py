@@ -79,6 +79,21 @@ def streams_from_yaml(yaml_path: str) -> "set[str] | None":
     return set(codes) if codes else None
 
 
+def exclude_access_from_yaml(yaml_path: str) -> "set[str] | None":
+    """Read ingest.exclude_access from a programme file, or None if absent.
+
+    A programme names the access routes it does NOT own so a shared feed can
+    defer them. The mainstream Civil feed lists augmented (ENGEAP) students in
+    the years their section plan reads ENG-CV; this key keeps them out and hands
+    them to ENG-CIVIL-AUG rather than claiming them.
+    """
+    if not yaml_path or not Path(yaml_path).exists():
+        return None
+    doc = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8")) or {}
+    codes = (doc.get("ingest") or {}).get("exclude_access")
+    return set(codes) if codes else None
+
+
 def ingest_path(db: Store, path: str, programme: str, name: str = "",
                 yaml_path: str = "") -> dict[str, int]:
     """Register the programme and ingest one file (PDF/text or CSV)."""
@@ -87,7 +102,9 @@ def ingest_path(db: Store, path: str, programme: str, name: str = "",
     if suffix == ".csv":
         parsed = parse_csv(path, programme)
     else:
-        parsed = parse_file(path, programme, keep_streams=streams_from_yaml(yaml_path))
+        parsed = parse_file(path, programme,
+                            keep_streams=streams_from_yaml(yaml_path),
+                            exclude_access=exclude_access_from_yaml(yaml_path))
     counts = db.ingest(parsed, source=Path(path).name)
     counts["n_skipped"] = len(parsed.get("skipped", []))
     counts["skipped"] = parsed.get("skipped", [])
@@ -110,10 +127,15 @@ def main() -> None:
           f"{counts['n_decisions']} decisions")
     skipped = counts.get("skipped", [])
     if skipped:
-        placed = [r for r in skipped if r["stream_codes"]]
-        unplaced = [r for r in skipped if not r["stream_codes"]]
-        print(f"  skipped {len(skipped)} students not in this programme's streams "
-              f"({len(placed)} other-stream, {len(unplaced)} with no stream code)")
+        access = [r for r in skipped if r.get("reason") == "access"]
+        stream = [r for r in skipped if r.get("reason") != "access"]
+        placed = [r for r in stream if r["stream_codes"]]
+        unplaced = [r for r in stream if not r["stream_codes"]]
+        print(f"  skipped {len(skipped)} students not owned by this programme "
+              f"({len(access)} other-access, {len(placed)} other-stream, "
+              f"{len(unplaced)} with no stream code)")
+        for r in access:
+            print(f"    access {r['access_code']} -> deferred: {r['student_number']}")
         for r in unplaced:
             print(f"    no stream code -> review: {r['student_number']}")
     db.close()

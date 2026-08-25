@@ -46,6 +46,11 @@ SUMMARY_RE = re.compile(r"(\d+):\s*(\d+)")
 # "ENGEAP" cannot match (\b needs a boundary after two letters), so the augmented
 # access token is excluded for free.
 STREAM_RE = re.compile(r"\bEN[A-Z]{2}\b")
+# A student's access route: "Access : ENGEAP 2021", "Access : CT-ENG", ... . It
+# rides on the line under the header and names the programme the student was
+# admitted through. ENGEAP is the augmented access route; a mainstream feed uses
+# this to defer augmented students to their own programme rather than claim them.
+ACCESS_RE = re.compile(r"Access\s*:\s*([A-Z0-9-]+)")
 
 
 def extract_text(path: str) -> str:
@@ -97,7 +102,8 @@ def _parse_module_line(parts: list[str]) -> Optional[dict]:
 
 
 def parse_ers(text: str, programme: str,
-              keep_streams: Optional[set[str]] = None) -> dict[str, list[dict]]:
+              keep_streams: Optional[set[str]] = None,
+              exclude_access: Optional[set[str]] = None) -> dict[str, list[dict]]:
     """ERS layout text -> {'students', 'results', 'decisions'} for one programme.
 
     keep_streams, when given, keeps only students whose header stream set meets it
@@ -120,6 +126,7 @@ def parse_ers(text: str, programme: str,
     period_credits: dict[int, int] = {}
     student_plan: Optional[str] = None   # current plan: the most recent period's
     student_streams: dict[str, set[str]] = {}   # header stream codes seen per student
+    student_access: dict[str, str] = {}          # access route per student (first seen)
 
     def flush() -> None:
         """Stamp the current student's rows with year/credits, then bank them."""
@@ -163,6 +170,11 @@ def parse_ers(text: str, programme: str,
             continue
 
         if not student:
+            continue
+
+        am = ACCESS_RE.search(line)
+        if am and student not in student_access:
+            student_access[student] = am.group(1)
             continue
 
         dh = DECISION_HEADER_RE.search(line)
@@ -210,23 +222,36 @@ def parse_ers(text: str, programme: str,
 
     flush()
 
-    # Stamp every kept student with the stream codes read from its header.
+    # Stamp every student with the stream codes and access route read from its header.
     for srec in students.values():
         srec["stream_codes"] = sorted(student_streams.get(srec["student_number"], set()))
+        srec["access_code"] = student_access.get(srec["student_number"], "")
 
-    if keep_streams is None:
+    if keep_streams is None and exclude_access is None:
         return {"students": list(students.values()),
                 "results": results, "decisions": decisions, "skipped": []}
 
-    # Keep students whose header streams meet the wanted set; surface the rest.
-    want = set(keep_streams)
+    # Two gates, both fail-safe:
+    #   keep_streams   -- keep only students whose header streams meet the set
+    #                     (a shared feed filtered to the streams this programme owns);
+    #   exclude_access -- drop students admitted through another programme's access
+    #                     route (e.g. a mainstream feed defers ENGEAP augmented students).
+    # A student failing either gate is surfaced under 'skipped', never lost.
+    want = set(keep_streams) if keep_streams is not None else None
+    deny = set(exclude_access) if exclude_access is not None else set()
     kept, skipped = set(), []
-    for sn, streams in ((s2["student_number"], set(s2["stream_codes"]))
-                        for s2 in students.values()):
-        if streams & want:
-            kept.add(sn)
+    for s2 in students.values():
+        sn = s2["student_number"]
+        streams = set(s2["stream_codes"])
+        access = s2["access_code"]
+        if want is not None and not (streams & want):
+            skipped.append({"student_number": sn, "stream_codes": sorted(streams),
+                            "access_code": access, "reason": "stream"})
+        elif access in deny:
+            skipped.append({"student_number": sn, "stream_codes": sorted(streams),
+                            "access_code": access, "reason": "access"})
         else:
-            skipped.append({"student_number": sn, "stream_codes": sorted(streams)})
+            kept.add(sn)
     return {
         "students":  [s2 for s2 in students.values()    if s2["student_number"] in kept],
         "results":   [r  for r  in results               if r["student_number"] in kept],
@@ -235,6 +260,7 @@ def parse_ers(text: str, programme: str,
 
 
 def parse_file(path: str, programme: str,
-               keep_streams: Optional[set[str]] = None) -> dict[str, list[dict]]:
+               keep_streams: Optional[set[str]] = None,
+               exclude_access: Optional[set[str]] = None) -> dict[str, list[dict]]:
     """Convenience: read a file (PDF or text) and parse it for one programme."""
-    return parse_ers(extract_text(path), programme, keep_streams)
+    return parse_ers(extract_text(path), programme, keep_streams, exclude_access)
