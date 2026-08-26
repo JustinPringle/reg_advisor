@@ -105,16 +105,23 @@ def load_programme(path: str, validate: bool = True,
     prog.setdefault("total_credits", total)   # a declared value wins if present
     external = [str(c).strip() for c in (raw.get("external_prereqs") or [])]
     equivalences: list[tuple[str, str]] = []
+    # Directional twin map (augmented -> mainstream), read from the labelled
+    # keys rather than tuple order, so the advisor can route a failed augmented
+    # module to the mainstream module the student actually repeats.
+    twins: dict[str, str] = {}
     for pair in (raw.get("equivalences") or []):
         if isinstance(pair, dict):
             codes = [str(v).strip() for v in pair.values() if isinstance(v, str)]
             external += codes
             if len(codes) == 2:
                 equivalences.append((codes[0], codes[1]))
+            aug, main = str(pair.get("augmented", "")).strip(), str(pair.get("mainstream", "")).strip()
+            if aug and main:
+                twins[aug] = main
     cur = {"programme": prog, "modules": modules, "elective_groups": {},
            "rules": merge_rules(raw.get("rules")),
            "external_prereqs": sorted(set(external)),
-           "equivalences": equivalences}
+           "equivalences": equivalences, "twins": twins}
     # cur = {"programme": prog, "modules": modules, "elective_groups": {},
     #        "rules": merge_rules(raw.get("rules"))}
 

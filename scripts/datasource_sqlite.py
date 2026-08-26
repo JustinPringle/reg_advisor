@@ -58,6 +58,7 @@ class SqliteSource:
         self.cur = self._load_rules(meta.get("yaml_path"))
         self.advice_ready = self.cur is not None
         self.ers_policy = ((self.cur or {}).get("rules") or {}).get("ers")
+        self._raw = store.results(programme)   # raw rows, kept for transcript + names
         self.results = self._load_results()
         self.bio = {r["student_number"]: r for r in store.students(programme)}
         self.history = self._load_history()
@@ -93,7 +94,7 @@ class SqliteSource:
     def _load_results(self) -> dict[str, list[dict[str, Any]]]:
         """Store rows -> engine shape, mirroring data_loaders.load_results."""
         out: dict[str, list[dict[str, Any]]] = {}
-        for sn, rows in self.store.results(self.programme).items():
+        for sn, rows in self._raw.items():
             shaped = []
             for r in rows:
                 code = (r.get("module_code") or "").strip()
@@ -172,6 +173,34 @@ class SqliteSource:
         out.sort(key=lambda x: x["name"].lower())
         return out
 
+    # Supp blocks fall just after the semester they supplement, foundation first.
+    _BLOCK_ORDER = {"0": 0.0, "1": 1.0, "S1": 1.5, "2": 2.0, "S2": 2.5}
+    _BLOCK_LABEL = {"0": "Annual", "1": "Sem 1", "S1": "Supp 1", "2": "Sem 2", "S2": "Supp 2"}
+
+    def _transcript(self, sn: str) -> list[dict[str, Any]]:
+        """Every result the student has, grouped by period, oldest first.
+        The complete history a coordinator needs to weigh a concession."""
+        periods: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for r in self._raw.get(sn, []):
+            code = (r.get("module_code") or "").strip()
+            if not code:
+                continue
+            rc = (r.get("result_code") or "").strip().upper()
+            mark = r.get("grade")
+            passed = (rc in PASS_CODES) or (not rc and mark is not None and mark >= 50)
+            yr, blk = str(r.get("calendar_year") or ""), (r.get("block") or "").strip()
+            periods.setdefault((yr, blk), []).append(
+                {"code": code, "name": r.get("module_name") or "",
+                 "credits": r.get("credits") or 0, "mark": mark,
+                 "result_code": rc, "result_text": r.get("result_text") or "",
+                 "passed": passed})
+        out = []
+        for (yr, blk) in sorted(periods, key=lambda k: (k[0], self._BLOCK_ORDER.get(k[1], 9))):
+            mods = sorted(periods[(yr, blk)], key=lambda m: m["code"])
+            label = f"{yr} {self._BLOCK_LABEL.get(blk, blk)}"
+            out.append({"period": label, "modules": mods})
+        return out
+
     def get_student(self, sn: str) -> dict[str, Any] | None:
         if sn not in self.results:
             return None
@@ -192,10 +221,33 @@ class SqliteSource:
         in_progress = sorted({r["course_code"] for r in self.results[sn]
                               if not r["result_code"] and r["mark"] is None and r["course_code"]})
 
+        twins = (self.cur or {}).get("twins") or {}
+        attempts = tx.get("attempts", {})
+        cl = tx.get("core_len")
+        names = {r.get("module_code"): r.get("module_name")
+                 for r in self._raw.get(sn, []) if r.get("module_code")}
+
+        def reroute(code: str) -> tuple[str, dict[str, Any] | None, str | None]:
+            """A failed augmented L1 module is repeated in its mainstream twin --
+            the augmented section is not re-offered. Once the student has entered
+            the mainstream module (sat the twin), show that code, carrying the
+            best mark across the pair so the near-miss stays visible.
+            DECISION (Justin Pringle, 2026-08-26): route on twin-attempt evidence;
+            a student still in the augmented years keeps the augmented code."""
+            main = twins.get(code)
+            if not main or attempts.get(R.core_code(main, cl), 0) <= 0:
+                return code, R._best(tx, code), None
+            aug_b, main_b = R._best(tx, code), R._best(tx, main)
+            if (aug_b and aug_b["passed"]) or (main_b and main_b["passed"]):
+                return code, R._best(tx, code), None
+            cands = [b for b in (aug_b, main_b) if b and b["mark"] is not None]
+            best = max(cands, key=lambda b: b["mark"]) if cands else None
+            return main, best, code
+
         def slim(bucket: list[dict[str, Any]]) -> list[dict[str, Any]]:
             out = []
             for x in bucket:
-                best = R._best(tx, x["code"])
+                code, best, twin_of = reroute(x["code"])
                 carry = []
                 for p in x.get("prereq_check", {}).get("missing", []):
                     ps = str(p)
@@ -203,18 +255,22 @@ class SqliteSource:
                         continue
                     pb = R._best(tx, ps)
                     carry.append({"code": ps, "mark": pb["mark"] if pb else None})
-                out.append({"code": x["code"], "name": x.get("name", ""),
-                            "credits": x.get("credits", 0),
-                            "unmet": x.get("prereq_check", {}).get("unmet", []),
-                            "mark": best["mark"] if best else None,
-                            "prereq_marks": carry})
+                row = {"code": code, "name": names.get(code) or x.get("name", ""),
+                       "credits": x.get("credits", 0),
+                       "unmet": x.get("prereq_check", {}).get("unmet", []),
+                       "mark": best["mark"] if best else None,
+                       "prereq_marks": carry}
+                if twin_of:
+                    row["twin_of"] = twin_of
+                out.append(row)
             return out
 
         return {
-            "bio": {**bio, "gpa": round(tx["gpa"]),
+            "bio": {**bio, "gpa": round(tx.get("gpa_passed", tx["gpa"])),
                     "credits_passed": round(tx["credits_passed"]),
                     "passed_count": len(tx["passed_set"]),
                     "semesters": tx["semesters_registered"], "in_progress": in_progress},
+            "transcript": self._transcript(sn),
             "advice_ready": True,
             "official": {"code": h.get("code", ""), "text": h.get("text", ""),
                          "status": h.get("status", "none")},
