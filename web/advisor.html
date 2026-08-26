@@ -74,6 +74,17 @@
   .grade.pass{background:var(--green-bg);color:var(--green)}
   .carry{font-size:12px;color:var(--amber);background:var(--amber-bg);border-radius:6px;padding:1px 7px}
   .miss{font-size:12px;color:var(--red)}
+  .twin{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 6px;white-space:nowrap}
+  details.transcript{margin-top:12px}
+  details.transcript>summary{cursor:pointer;font-size:13px;color:var(--muted);user-select:none;list-style:none}
+  details.transcript>summary::-webkit-details-marker{display:none}
+  details.transcript>summary::before{content:"\u25b8 ";color:var(--muted)}
+  details.transcript[open]>summary::before{content:"\u25be "}
+  details.transcript .period{margin:10px 0 3px;font-size:12px;font-weight:600;color:var(--muted)}
+  details.transcript table{font-size:12px}
+  details.transcript td{padding:2px 8px 2px 0;color:var(--ink)}
+  details.transcript td.rt{color:var(--muted)}
+  details.transcript tr.fail td:first-child{color:var(--red)}
   .qbtns{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
   .qbtns input.note{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:3px 8px;width:150px}
   .qbtns button{font:inherit;font-size:12px;border-radius:7px;padding:3px 10px;cursor:pointer;border:1px solid}
@@ -689,8 +700,20 @@ function decideRow(m){
 function modLine(m,opts){
   const miss=(opts.withMiss&&m.unmet&&m.unmet.length)?`<span class="miss">needs ${m.unmet.map(esc).join(", ")}</span>`:"";
   const tail=opts.decide?decideRow(m):`<span class="cr">${m.credits||0}cr</span>`;
+  const twin=m.twin_of?`<span class="twin" title="mainstream repeat of the augmented ${esc(m.twin_of)}">repeat of ${esc(m.twin_of)}</span>`:"";
   return `<div class="mod"><code>${esc(m.code)}</code><span class="mn">${esc(m.name)}</span>
-    ${opts.concession?carryPill(m):""}${miss}${gradePill(m,opts.passed)}${tail}</div>`;
+    ${twin}${opts.concession?carryPill(m):""}${miss}${gradePill(m,opts.passed)}${tail}</div>`;
+}
+function transcriptPanel(){
+  const t=DETAIL.transcript||[]; if(!t.length) return "";
+  const periods=t.map(p=>`<div class="period">${esc(p.period)}</div>
+    <table><tbody>${p.modules.map(m=>`<tr class="${m.passed?"":"fail"}">
+      <td><code>${esc(m.code)}</code></td>
+      <td class="rt" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.name||"")}</td>
+      <td>${esc(m.credits)}cr</td>
+      <td>${m.mark==null?"\u2014":esc(m.mark)}</td>
+      <td class="rt">${esc(m.result_text||m.result_code||"")}</td></tr>`).join("")}</tbody></table>`).join("");
+  return `<details class="transcript"><summary>Full transcript</summary>${periods}</details>`;
 }
 function bucket(title,k,cls,opts){
   const rows=DETAIL.advice[k]||[]; if(!rows.length) return "";
@@ -745,6 +768,7 @@ function render(){
     ${b.in_progress&&b.in_progress.length?`<div style="margin-top:12px;font-size:13px">
       <span style="color:var(--muted)">Currently registered:</span>
       ${b.in_progress.map(c=>`<code style="margin:0 3px">${esc(c)}</code>`).join("")}</div>`:""}
+    ${transcriptPanel()}
   </div>
 
   <div class="card"><h2>Academic standing</h2>

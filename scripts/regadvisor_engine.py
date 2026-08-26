@@ -81,6 +81,15 @@ def index_transcript(results: list[dict[str, Any]],
     weighted = sum(b["mark"] * b["credits"] for b in graded)
     total_cr = sum(b["credits"] for b in graded)
     gpa = weighted / total_cr if total_cr else 0.0
+    # Passed-mark WAM: the same credit-weighted mean over PASSED best-attempts
+    # only. DECISION (Justin Pringle, 2026-08-26): the concession gate and the
+    # profile "average mark" read this, not the all-attempts gpa above. "WAM >=
+    # 55" is meant to say a sound student who slipped on one thing, so a failed
+    # sitting should not drag the gate down. Computed here, before the twin
+    # aliasing below, so an equivalent pair is never weighted twice.
+    passed_graded = [b for b in graded if b["passed"]]
+    gpa_passed = (sum(b["mark"] * b["credits"] for b in passed_graded)
+                  / sum(b["credits"] for b in passed_graded)) if passed_graded else 0.0
     passed_set = {c for c, b in best.items() if b["passed"]}
     credits_passed = sum(b["credits"] for b in best.values() if b["passed"])
     credits_by_level: dict[int, float] = {}
@@ -111,7 +120,7 @@ def index_transcript(results: list[dict[str, Any]],
         if blk in ("1", "2"):
             sems.add((r.get("calendar_year"), blk))
     return {"best": best, "attempts": attempts, "passed_set": passed_set,
-            "gpa": gpa, "credits_passed": credits_passed,
+            "gpa": gpa, "gpa_passed": gpa_passed, "credits_passed": credits_passed,
             "credits_by_level": credits_by_level, "year_of_study": yos,
             "semesters_registered": len(sems), "core_len": core_len}
 
@@ -329,7 +338,7 @@ def eval_advice(curriculum: dict[str, Any], tx: dict[str, Any],
             out["can_register"].append(row)
         elif has_review:
             out["needs_review"].append(row)
-        elif (tx.get("gpa", 0) >= concession_gpa
+        elif (tx.get("gpa_passed", tx.get("gpa", 0)) >= concession_gpa
               and pc["n_unmet"] <= max_missing and carryable):
             out["concession_possible"].append(row)
         else:
