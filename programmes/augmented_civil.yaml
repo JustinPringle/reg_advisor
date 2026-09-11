@@ -179,10 +179,10 @@ modules:
     sem: 2
     prereqs:
       - {code: CHEM181, min_mark: 40}
-  - {code: "ELECTIVE_OR_ZULN_Y2S2", name: "Basic isiZulu Language Studies (or other language)",
+    - {code: "ZULN101_OR", name: "Basic isiZulu Language Studies (or other language)",
      credits: 16, year: 2, sem: 2, type: elective, choice: LANG_AUG}
-  # - {code: "ELECTIVE_OR_ZULN_Y2S2", name: "Elective (in place of ZULN101)",
-  #    credits: 16, year: 2, sem: 2, type: elective, choice: LANG_AUG}
+  - {code: "ELECTIVE_AUG", name: "Elective (in place of ZULN101)",
+     credits: 16, year: 2, sem: 2, type: elective, choice: LANG_AUG}
  
 
   # ===================================================================
