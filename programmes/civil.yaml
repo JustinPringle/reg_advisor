@@ -31,6 +31,7 @@ external_prereqs:
 programme:
   code: ENG-CIVIL
   name: Civil Engineering
+  total_credits: 576
 regulation_years: 4
 # Augmented <-> mainstream first-year twins (handbook equivalence table). An
 # augmented-entry student who articulates into mainstream Civil sits these eight
