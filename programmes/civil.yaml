@@ -183,9 +183,17 @@ modules:
     credits: 16
     year: 2
     sem: 1
-    prereqs: [MATH131, MATH141]
-  - {code: "ZULN101_OR", name: "Basic isiZulu Language Studies (or other language)", credits: 16, year: 2, sem: 1, type: elective}
-  - {code: "ELECTIVE_Y2S1", name: "Elective", credits: 16, year: 2, sem: 1, type: elective}
+    prereqs: 
+      - {code: MATH131, min_mark: 50}
+      - {code: MATH141, min_mark: 40}
+  - {code: "ZULN101_OR", name: "Basic isiZulu Language Studies (or other language)",
+     credits: 16, year: 2, sem: 1, type: elective, choice: LANG_Y2S1}
+  - {code: "ELECTIVE_Y2S1", name: "Elective (in place of ZULN101)",
+     credits: 16, year: 2, sem: 1, type: elective, choice: LANG_Y2S1}
+
+  # - {code: "ZULN101_OR", name: "Basic isiZulu Language Studies (or other language)", 
+  # credits: 16, year: 2, sem: 1, type: elective}
+  # - {code: "ELECTIVE_Y2S1", name: "Elective", credits: 16, year: 2, sem: 1, type: elective}
 
   # ---- Year 2, Semester 2 -------------------------------------------------
   - code: ENCV2FL

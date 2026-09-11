@@ -119,7 +119,7 @@ modules:
   - {code: PHYS160, name: "Augmented Engineering Physics 1A", credits: 16, year: 1, sem: 2, year_long: true}
   - {code: ENAG161, name: "Augmented Engineering Materials", credits: 8, year: 1, sem: 2}
   - code: ENAG160
-    name: "Augmented Engineering Design"
+    name: "Augmented Engineering Design 1"
     credits: 8
     year: 1
     sem: 2
@@ -168,7 +168,8 @@ modules:
     year: 2
     sem: 2
     prereqs:                     # mainstream: MATH131 + MATH132 carry
-      - {any: [{code: MATH160, min_mark: 40}, {code: MATH131, min_mark: 40}]}
+      - {any: [{code: MATH160, min_mark: 40}, 
+              {code: MATH131, min_mark: 40}]}
       - {code: MATH132, min_mark: 40}
   - code: CHEM191
     name: "Chemistry for Engineers 1B"
@@ -177,7 +178,11 @@ modules:
     sem: 2
     prereqs:
       - {code: CHEM181, min_mark: 40}
-  - {code: "ELECTIVE_OR_ZULN_Y2S2", name: "Elective or ZULN101 (Basic isiZulu)", credits: 16, year: 2, sem: 2, type: elective}
+  - {code: "ZULN101_OR", name: "Basic isiZulu Language Studies (or other language)",
+     credits: 16, year: 2, sem: 1, type: elective, choice: LANG_Y2S1}
+  - {code: "ELECTIVE_Y2S1", name: "Elective (in place of ZULN101)",
+     credits: 16, year: 2, sem: 1, type: elective, choice: LANG_Y2S1}
+  # - {code: "ELECTIVE_OR_ZULN_Y2S2", name: "Elective or ZULN101 (Basic isiZulu)", credits: 16, year: 2, sem: 2, type: elective}
 
   # ===================================================================
   # LEVEL 2 — AUGMENTED YEAR 3  (mainstream Level 2, year hint +1)
@@ -203,9 +208,13 @@ modules:
     credits: 16
     year: 3
     sem: 1
-    prereqs: [*TW_M1A, *TW_M1B]        # was MATH131, MATH141
-  - {code: "ZULN101_OR", name: "Basic isiZulu Language Studies (or other language)", credits: 16, year: 3, sem: 1, type: elective}
-  - {code: "ELECTIVE_Y2S1", name: "Elective", credits: 16, year: 3, sem: 1, type: elective}
+    prereqs: 
+      - {any: [{code: MATH160, min_mark: 50}, {code: MATH131, min_mark: 50}]}
+      - {any: [{code: MATH161, min_mark: 40}, {code: MATH141, min_mark: 40}]} #[*TW_M1A, *TW_M1B]        # was MATH131, MATH141
+  
+
+  # - {code: "ZULN101_OR", name: "Basic isiZulu Language Studies (or other language)", credits: 16, year: 3, sem: 1, type: elective}
+  # - {code: "ELECTIVE_Y2S1", name: "Elective", credits: 16, year: 3, sem: 1, type: elective}
 
   # ---- Sem 2 -------------------------------------------------------------
   - code: ENCV2FL
