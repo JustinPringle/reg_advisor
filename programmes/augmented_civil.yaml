@@ -212,8 +212,15 @@ modules:
     prereqs: 
       - {any: [{code: MATH160, min_mark: 50}, {code: MATH131, min_mark: 50}]}
       - {any: [{code: MATH161, min_mark: 40}, {code: MATH141, min_mark: 40}]} #[*TW_M1A, *TW_M1B]        # was MATH131, MATH141
+  - code: ENCV3TT
+    name: "Transport 1"
+    credits: 16
+    year: 3
+    sem: 1
+    prereqs:
+      - {min_year: 3}
+                # sheet: "Must be in 3rd yr of study"
   
-
   
 
   # ---- Sem 2 -------------------------------------------------------------
@@ -284,13 +291,7 @@ modules:
     year: 4
     sem: 1
     prereqs: [ENCV2SA, ENCV2SB]
-  - code: ENCV3TT
-    name: "Transport 1"
-    credits: 16
-    year: 4
-    sem: 1
-    prereqs:
-      - {min_year: 4}          # mainstream min_year 3 -> +1 for the 5-year degree
+        
   - code: STAT370
     name: "Engineering Statistics"
     credits: 8
@@ -376,7 +377,7 @@ modules:
     sem: 1
     prereqs:
       - {min_year: 5}          # mainstream min_year 4 -> +1 for the 5-year degree
-  - {code: "ELECTIVE_Y4S1", name: "Elective", credits: 8, year: 5, sem: 1, type: elective}
+  - {code: "ELECTIVE_Y3S1", name: "Elective", credits: 8, year: 5, sem: 1, type: elective}
 
   # ---- Sem 2 -------------------------------------------------------------
   - code: ENCV4DE
