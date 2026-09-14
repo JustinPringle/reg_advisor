@@ -1,0 +1,565 @@
+# modules.yaml — shared module catalogue for the Civil Engineering programmes.
+#
+# Facts about modules, nothing about curricula. Which slot a module fills, which
+# year it sits in and what a student must pass first are programme questions and
+# live in programmes/civil.yaml and programmes/augmented_civil.yaml.
+#
+# Membership is a programme question too: a module appearing here does not mean
+# a Civil student may take it. The programme files name the modules that count.
+#
+# GENERATED FILE — do not hand-edit. Regenerate with:
+#   python tools/build_catalogue.py <GroupSetups.xlsx> <Prerequisite.xlsx> \
+#       --year 2027 --out catalogue/
+
+meta:
+  version: 2027.1
+  calendar_year: 2027
+  generated: 2026-09-14
+  source: ITS extract, August 2026 (GroupSetups + Prerequisite, 2026-2027)
+  scope: modules reachable from ENG-CV and ENGEAP (ENCV), plus their prerequisite and substitute modules
+  level_basis: "first digit of the module code, except the codes in LEVEL_OVERRIDES in tools/build_catalogue.py"
+  level_unverified: []
+  module_count: 114
+
+modules:
+  ACCT102:
+    name: Accounting 102
+    credits: 16
+    level: 1
+  ACCT103:
+    name: Accounting 103
+    credits: 16
+    level: 1
+    blocks: [2]
+  AGEC210:
+    name: Introduction to Agricultural Economics
+    credits: 16
+    level: 2
+  ANTH101:
+    name: Introduction to Anthropology
+    credits: 16
+    level: 1
+    blocks: [1]
+  CHEM163:
+    name: Chemistry & Society 1
+    credits: 8
+    level: 1
+    blocks: [1]
+  CHEM171:
+    name: Chemical Engineering Chemistry 2
+    credits: 16
+    level: 1
+  CHEM173:
+    name: Chemistry & Society 2
+    credits: 8
+    level: 1
+    blocks: [2]
+  CHEM181:
+    name: Chemistry for Engineers 1A
+    credits: 8
+    level: 1
+    blocks: [0, 1]
+  CHEM191:
+    name: Chemistry for Engineers 1B
+    credits: 8
+    level: 1
+    blocks: [2]
+  ECHS101:
+    name: Political Economy of Food in a Global Context
+    credits: 16
+    level: 1
+    blocks: [1]
+  ECON101:
+    name: Principles of Microeconomics
+    credits: 16
+    level: 1
+    blocks: [1]
+  EDSJ1CS:
+    name: Critical Social Justice and Citizenship
+    credits: 0
+    level: 1
+    blocks: [1, 2]
+  ENAG160:
+    name: Augmented Engineering Design
+    credits: 8
+    level: 1
+    blocks: [2]
+  ENAG161:
+    name: Augmented Engineering Materials
+    credits: 8
+    level: 1
+    blocks: [2]
+  ENAG1DE:
+    name: Engineering Design
+    credits: 8
+    level: 1
+    blocks: [2]
+  ENAG1MT:
+    name: Introduction to Engineering Materials
+    credits: 8
+    level: 1
+    blocks: [2]
+  ENCH160:
+    name: Augmented Tech. Communication for  Engineers
+    credits: 8
+    level: 1
+    blocks: [1]
+  ENCH1EA:
+    name: Chemical Engineering Principles 1
+    credits: 8
+    level: 1
+  ENCH1EB:
+    name: Chemical Engineering Principles 2
+    credits: 8
+    level: 1
+  ENCH1TC:
+    name: Technical Communication for Engineers
+    credits: 8
+    level: 1
+    blocks: [1]
+  ENCH4ML:
+    name: Engineering Management & Labour Relations
+    credits: 8
+    level: 4
+    blocks: [1]
+  ENCV1ED:
+    name: Introduction to Civil Design
+    credits: 8
+    level: 1
+    blocks: [2]
+  ENCV1EP:
+    name: Engineering Practice Workshop
+    credits: 0
+    level: 1
+    blocks: [2]
+  ENCV2FL:
+    name: Fluids 1
+    credits: 8
+    level: 2
+    blocks: [2]
+  ENCV2MT:
+    name: Civil Engineering Materials
+    credits: 8
+    level: 2
+    blocks: [1]
+  ENCV2MW:
+    name: Materials Workshop Course
+    credits: 0
+    level: 2
+    blocks: [2]
+  ENCV2SA:
+    name: Structures 1
+    credits: 16
+    level: 2
+    blocks: [1]
+  ENCV2SB:
+    name: Structures 2
+    credits: 16
+    level: 2
+    blocks: [2]
+  ENCV2SD:
+    name: Structural Design 1
+    credits: 16
+    level: 2
+    blocks: [2]
+  ENCV3CW:
+    name: Civil CADD Workshop
+    credits: 0
+    level: 3
+    blocks: [2]
+  ENCV3FA:
+    name: Fluids 2
+    credits: 16
+    level: 3
+    blocks: [1]
+  ENCV3FB:
+    name: Fluids 3
+    credits: 16
+    level: 3
+    blocks: [2]
+  ENCV3G1:
+    name: Geotechnical Engineering Studies 1
+    credits: 16
+    level: 3
+    blocks: [1]
+  ENCV3G2:
+    name: Geotechnical Engineering Studies 2
+    credits: 16
+    level: 3
+    blocks: [2]
+  ENCV3MS:
+    name: Mathematical Systems
+    credits: 8
+    level: 3
+    blocks: [2]
+  ENCV3SD:
+    name: Structural Design 2
+    credits: 16
+    level: 3
+    blocks: [2]
+  ENCV3ST:
+    name: Structures 3
+    credits: 16
+    level: 3
+    blocks: [1]
+  ENCV3TP:
+    name: Transport 2
+    credits: 8
+    level: 3
+    blocks: [2]
+  ENCV3TT:
+    name: Transport 1
+    credits: 16
+    level: 3
+    blocks: [1]
+  ENCV4DE:
+    name: Civil Engineering Design Project
+    credits: 24
+    level: 4
+    blocks: [2]
+  ENCV4DS:
+    name: Dissertation
+    credits: 24
+    level: 4
+    blocks: [2]
+  ENCV4GS:
+    name: Ground and Structural Engineering
+    credits: 16
+    level: 4
+    blocks: [1]
+  ENCV4TE:
+    name: Transport and Environmental Management
+    credits: 16
+    level: 4
+    blocks: [1]
+  ENCV4VW:
+    name: Vacation Work
+    credits: 0
+    level: 4
+    blocks: [2]
+  ENCV4WE:
+    name: Water and Environmental Engineering
+    credits: 16
+    level: 4
+    blocks: [1]
+  ENEL1ED:
+    name: Electrical Design 1
+    credits: 8
+    level: 1
+  ENEL4EB:
+    name: Engineering Business
+    credits: 8
+    level: 4
+    blocks: [1, 2]
+  ENEL4EE:
+    name: Engineering Entrepreneurship
+    credits: 8
+    level: 4
+    blocks: [1, 2]
+  ENGL101:
+    name: Introduction to English Studies A
+    credits: 16
+    level: 1
+  ENGL102:
+    name: Introduction to English Studies B
+    credits: 16
+    level: 1
+    blocks: [2]
+  ENME160:
+    name: Augmented Engineering Drawing
+    credits: 8
+    level: 1
+    blocks: [1]
+  ENME1DR:
+    name: Engineering Drawing
+    credits: 8
+    level: 1
+    blocks: [1]
+  ENME1ED:
+    name: Mechanical Engineering Design
+    credits: 8
+    level: 1
+  ENME1EM:
+    name: Introduction to Engineering Materials
+    credits: 8
+    level: 1
+    blocks: [2]
+  ENPD7CL:
+    name: Management of Construction Contracts
+    credits: 8
+    level: 4
+    blocks: [2]
+  ENPD7PP:
+    name: Professional Practice
+    credits: 8
+    level: 4
+    blocks: [1]
+  ENSV2SC:
+    name: Survey Camp 2
+    credits: 8
+    level: 2
+  ENSV2SE:
+    name: Surveying Engineering
+    credits: 16
+    level: 2
+    blocks: [1]
+  FREN101:
+    name: "French 1A: French for Beginners"
+    credits: 16
+    level: 1
+    blocks: [1]
+  GEOL215:
+    name: Elements of Geology for Civil Engineers
+    credits: 16
+    level: 2
+    blocks: [2]
+  HIST104:
+    name: The Making of the Modern World
+    credits: 16
+    level: 1
+    blocks: [1]
+  HIST105:
+    name: Empires of the Modern World
+    credits: 16
+    level: 1
+    blocks: [2]
+  HRMG1A0:
+    name: Introduction To Individual Behaviour And HRM
+    credits: 16
+    level: 1
+  HRMG1C0:
+    name: Principles of Social Behaviour & Group Dynamc
+    credits: 16
+    level: 1
+  INST102:
+    name: News Media in the Internet Society
+    credits: 16
+    level: 1
+    blocks: [2]
+  LAWS1AS:
+    name: Aspects of South African Law
+    credits: 16
+    level: 1
+    blocks: [2]
+  LAWS1FL:
+    name: Foundations of SA Law
+    credits: 16
+    level: 1
+  LING101:
+    name: Understanding Language
+    credits: 16
+    level: 1
+    blocks: [1]
+  LING102:
+    name: "Linguistics 1B: Intro to Language studies"
+    credits: 16
+    level: 1
+    blocks: [2]
+  MATH130:
+    name: Introduction to Calculus
+    credits: 16
+    level: 1
+  MATH131:
+    name: Mathematics 1A (Eng)
+    credits: 16
+    level: 1
+    blocks: [1]
+  MATH132:
+    name: Applied Mathematics 1A (Eng)
+    credits: 16
+    level: 1
+    blocks: [0, 1]
+  MATH134:
+    name: Quantitative Methods 1
+    credits: 16
+    level: 1
+  MATH140:
+    name: Calculus and Linear Algebra
+    credits: 16
+    level: 1
+  MATH141:
+    name: Mathematics 1B (Eng)
+    credits: 16
+    level: 1
+    blocks: [2]
+  MATH142:
+    name: Applied Mathematics 1B (Eng)
+    credits: 16
+    level: 1
+    blocks: [2]
+  MATH143:
+    name: Further Mathematics for Natural Sciences
+    credits: 8
+    level: 1
+  MATH145:
+    name: Further Topics in Mathematics
+    credits: 16
+    level: 1
+  MATH150:
+    name: Mathematics for Natural Sciences
+    credits: 16
+    level: 1
+  MATH160:
+    name: Augmented Engineering Mathematics 1A
+    credits: 32
+    level: 1
+    blocks: [0]
+  MATH161:
+    name: Augmented Engineering Mathematics 1B
+    credits: 32
+    level: 1
+    blocks: [0]
+  MATH195:
+    name: Introduction to Calculus (Augmented)
+    credits: 32
+    level: 1
+  MATH196:
+    name: Calculus and Linear Algebra (Augmented)
+    credits: 32
+    level: 1
+  MATH238:
+    name: Mathematics 2A (Eng)
+    credits: 16
+    level: 2
+    blocks: [1]
+  MATH248:
+    name: Mathematics 2B (Eng)
+    credits: 16
+    level: 2
+    blocks: [2]
+  MATH360:
+    name: Numerical Methods
+    credits: 8
+    level: 3
+    blocks: [2]
+  NURS3RP:
+    name: Nursing Research Project
+    credits: 16
+    level: 3
+  PHYS110:
+    name: Mechanics, Optics and Thermal Physics
+    credits: 16
+    level: 1
+    blocks: [1]
+  PHYS120:
+    name: Electromagnetism, Waves and Modern Physics
+    credits: 16
+    level: 1
+    blocks: [2]
+  PHYS131:
+    name: Intro Physics for Life Sciences & Agriculture
+    credits: 16
+    level: 1
+  PHYS132:
+    name: Electromagnetism & Modern Phys for Life Sc
+    credits: 16
+    level: 1
+  PHYS133:
+    name: Modern Physics for Life Sciences & Agric
+    credits: 8
+    level: 1
+  PHYS151:
+    name: Engineering Physics 1A
+    credits: 16
+    level: 1
+    blocks: [1]
+  PHYS152:
+    name: Engineering Physics 1B
+    credits: 16
+    level: 1
+    blocks: [2]
+  PHYS160:
+    name: Augmented Engineering Physics 1A
+    credits: 32
+    level: 1
+    blocks: [0]
+  PHYS161:
+    name: Chemical Engineering Physics 1A
+    credits: 8
+    level: 1
+  PHYS162:
+    name: Chemical Engineering Physics 1B
+    credits: 16
+    level: 1
+  PHYS163:
+    name: Augmented Engineering Physics 1B
+    credits: 32
+    level: 1
+    blocks: [0]
+  PHYS195:
+    name: Mech Optics & Thermal Physics (Augmented)
+    credits: 32
+    level: 1
+  PHYS196:
+    name: Electromagnetic Waves & Mod Phys (Augmented)
+    credits: 32
+    level: 1
+  POLS101:
+    name: Introduction to Political Science
+    credits: 16
+    level: 1
+    blocks: [1]
+  POLS102:
+    name: Introduction to Global Politics
+    credits: 16
+    level: 1
+    blocks: [2]
+  PSYC102:
+    name: Introduction to Psychology B
+    credits: 16
+    level: 1
+    blocks: [2]
+  RELG101:
+    name: Introduction to Religion
+    credits: 16
+    level: 1
+    blocks: [1]
+  RELG106:
+    name: Religion and Conflict
+    credits: 16
+    level: 1
+    blocks: [2]
+  SPAN101:
+    name: Spanish 1A
+    credits: 16
+    level: 1
+  SPAN102:
+    name: Spanish 1B
+    credits: 16
+    level: 1
+    blocks: [2]
+  STAT370:
+    name: Engineering Statistics
+    credits: 8
+    level: 3
+    blocks: [1]
+  ZULM101:
+    name: Introduction to IsiZulu A
+    credits: 16
+    level: 1
+    blocks: [1]
+  ZULM102:
+    name: Introduction to IsiZulu B
+    credits: 16
+    level: 1
+    blocks: [2]
+  ZULM105:
+    name: Academic Writing
+    credits: 16
+    level: 1
+    blocks: [1, 2]
+  ZULM106:
+    name: Semiotics of African Cosmology
+    credits: 16
+    level: 1
+    blocks: [2]
+  ZULN101:
+    name: Basic IsiZulu Language Studies A
+    credits: 16
+    level: 1
+    blocks: [1, 2]
+  ZULN102:
+    name: Basic IsiZulu Language Studies B
+    credits: 16
+    level: 1
+    blocks: [2]

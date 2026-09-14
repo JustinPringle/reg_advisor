@@ -17,9 +17,18 @@ Pure apart from reading the YAML file. No pandas, no DOM.
 """
 from __future__ import annotations
 from typing import Any
+import os
 import yaml
 
 from regadvisor_engine import prereq_codes
+
+# Shared module catalogue: name, credits and level for every module a Civil
+# student can touch, generated from the ITS extract by scripts/build_catalogue.py.
+# A programme file names codes and structure; the facts come from here, so the
+# two programme files can no longer disagree about what a module is worth.
+DEFAULT_CATALOGUE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "catalogue", "modules.yaml")
 
 # Each prereq DICT must match exactly one of these key-sets. Anything else is an
 # authoring slip (a typo like `min_creditz`) the validator reports as an error.
@@ -80,14 +89,30 @@ def merge_rules(authored: dict[str, Any] | None) -> dict[str, Any]:
     return out
 
 
+# --- Catalogue --------------------------------------------------------------
+def load_catalogue(path: str | None = None) -> dict[str, dict[str, Any]]:
+    """Read modules.yaml. A missing file is not an error: the loader then falls
+    back to whatever the programme file states, exactly as it did before."""
+    path = path or DEFAULT_CATALOGUE
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh) or {}
+    return {str(k): dict(v or {}) for k, v in (raw.get("modules") or {}).items()}
+
+
 # --- Load -------------------------------------------------------------------
-def load_programme(path: str, validate: bool = True,
-                   strict: bool = True) -> dict[str, Any]:
+def load_programme(path: str, validate: bool = True, strict: bool = True,
+                   catalogue: dict[str, dict[str, Any]] | str | None = None
+                   ) -> dict[str, Any]:
     """Read an authored programme file into the engine's curriculum shape.
 
-    validate: run validate_programme and print its warnings.
-    strict:   raise ValueError if validation reports any errors.
+    validate:  run validate_programme and print its warnings.
+    strict:    raise ValueError if validation reports any errors.
+    catalogue: a loaded catalogue, a path to one, or None for the default.
     """
+    if catalogue is None or isinstance(catalogue, str):
+        catalogue = load_catalogue(catalogue)
     with open(path, encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
 
@@ -96,7 +121,7 @@ def load_programme(path: str, validate: bool = True,
     total = 0.0
     seen_groups: set[str] = set()
     for m in raw.get("modules") or []:
-        mod = _normalise_module(m)
+        mod = _normalise_module(m, catalogue)
         # A choice group is one slot however many ways it can be taken, so its
         # credits count once. Without this every subtotal double-counts the slot.
         grp = mod.get("choice")
@@ -134,7 +159,8 @@ def load_programme(path: str, validate: bool = True,
     cur = {"programme": prog, "modules": modules, "elective_groups": {},
            "rules": merge_rules(raw.get("rules")),
            "external_prereqs": sorted(set(external)),
-           "equivalences": equivalences, "twins": twins}
+           "equivalences": equivalences, "twins": twins,
+           "catalogue": catalogue}
     # cur = {"programme": prog, "modules": modules, "elective_groups": {},
     #        "rules": merge_rules(raw.get("rules"))}
 
@@ -150,9 +176,22 @@ def load_programme(path: str, validate: bool = True,
     return cur
 
 
-def _normalise_module(m: dict[str, Any]) -> dict[str, Any]:
-    """Fill defaults and derive review_notes from the prereq tree."""
+def _normalise_module(m: dict[str, Any],
+                     catalogue: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Fill defaults and derive review_notes from the prereq tree.
+
+    Facts (name, credits, level) come from the catalogue when the programme file
+    omits them. An authored value still wins -- validate_programme reports the
+    disagreement rather than silently overriding an academic's authoring.
+    """
     mod = dict(m)
+    fact = (catalogue or {}).get(mod.get("code")) or {}
+    for key in ("name", "credits", "level"):
+        if mod.get(key) is None and fact.get(key) is not None:
+            mod[key] = fact[key]
+    if fact:
+        mod["catalogue_credits"] = fact.get("credits")
+        mod["catalogue_name"] = fact.get("name")
     mod.setdefault("prereqs", [])
     mod.setdefault("coreqs", [])
     mtype = mod.get("type") or "prescribed"
@@ -217,6 +256,21 @@ def validate_programme(cur: dict[str, Any]) -> dict[str, list[str]]:
             warnings.append(f"{code}: missing name")
         if not isinstance(m.get("credits"), (int, float)):
             errors.append(f"{code}: credits must be a number, got {m.get('credits')!r}")
+        if cur.get("catalogue"):
+            if m.get("type") not in ELECTIVE_TYPES and code not in cur["catalogue"]:
+                warnings.append(
+                    f"{code}: not in the module catalogue -- a typo, a module ITS "
+                    f"no longer offers, or a catalogue that needs regenerating.")
+            cat_cr = m.get("catalogue_credits")
+            if (isinstance(cat_cr, (int, float))
+                    and isinstance(m.get("credits"), (int, float))
+                    and float(cat_cr) != float(m["credits"])):
+                warnings.append(
+                    f"{code}: programme file says {m['credits']} credits, "
+                    f"catalogue (ITS) says {cat_cr}. The authored value wins. "
+                    f"Expected for augmented foundation modules, where the ITS "
+                    f"subject credit is the registration load and the authored "
+                    f"value is the degree credit; anywhere else, check it.")
         for f in ("year", "sem"):
             if not isinstance(m.get(f), int):
                 warnings.append(f"{code}: {f} should be an integer")

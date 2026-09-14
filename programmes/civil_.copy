@@ -110,6 +110,8 @@ modules:
   - {code: MATH131, name: "Mathematics 1A (Eng)", credits: 16, year: 1, sem: 1}
   - {code: MATH132, name: "Applied Mathematics 1A (Eng)", credits: 16, year: 1, sem: 1}
   - code: PHYS151
+    name: "Engineering Physics 1A"
+    credits: 16
     year: 1
     sem: 1
     coreqs:
@@ -117,27 +119,37 @@ modules:
 
   # ---- Year 1, Semester 2 -------------------------------------------------
   - code: CHEM191
+    name: "Chemistry for Engineers 1B"
+    credits: 8
     year: 1
     sem: 2
     prereqs:
       - {code: CHEM181, min_mark: 40}
   - code: ENCV1ED
+    name: "Introduction to Civil Design"
+    credits: 8
     year: 1
     sem: 2
     prereqs: [ENME1DR]
-  - {code: ENME1EM, year: 1, sem: 2}
+  - {code: ENME1EM, name: "Introduction to Engineering Materials", credits: 8, year: 1, sem: 2}
   - code: MATH141
+    name: "Mathematics 1B (Eng)"
+    credits: 16
     year: 1
     sem: 2
     prereqs:
       - {code: MATH131, min_mark: 40}
   - code: MATH142
+    name: "Applied Mathematics 1B (Eng)"
+    credits: 16
     year: 1
     sem: 2
     prereqs:
       - {code: MATH131, min_mark: 40}
       - {code: MATH132, min_mark: 40}
   - code: PHYS152
+    name: "Engineering Physics 1B"
+    credits: 16
     year: 1
     sem: 2
     prereqs:
@@ -146,14 +158,20 @@ modules:
 
   # ---- Year 2, Semester 1 -------------------------------------------------
   - code: ENCV2MT
+    name: "Civil Engineering Materials"
+    credits: 8
     year: 2
     sem: 1
     prereqs: [ENME1EM]
   - code: ENCV2SA
+    name: "Structures 1"
+    credits: 16
     year: 2
     sem: 1
     prereqs: [MATH141, MATH142]
   - code: ENSV2SE
+    name: "Surveying Engineering"
+    credits: 16
     year: 2
     sem: 1
     # Sheet: ">= 62cr level 1, >=32cr core, >=2 sem reg". "core" credits are not
@@ -162,6 +180,8 @@ modules:
       - {min_credits: 62, level: 1}
       - {min_sem: 2}
   - code: MATH238
+    name: "Mathematics 2A (Eng)"
+    credits: 16
     year: 2
     sem: 1
     prereqs: 
@@ -178,41 +198,57 @@ modules:
 
   # ---- Year 2, Semester 2 -------------------------------------------------
   - code: ENCV2FL
+    name: "Fluids 1"
+    credits: 8
     year: 2
     sem: 2
     prereqs:
       - MATH142
       - {any: [PHYS151, PHYS110]}
   - code: ENCV2MW
+    name: "Materials Workshop"
+    credits: 0
     year: 2
     sem: 2
     is_dp: true
     prereqs: [ENCV2MT]          # sheet: ENCV2MT (DP)
   - code: ENCV2SB
+    name: "Structures 2"
+    credits: 16
     year: 2
     sem: 2
     prereqs: [ENCV2SA]
   - code: ENCV2SD
+    name: "Structural Design 1"
+    credits: 16
     year: 2
     sem: 2
     prereqs: [ENCV2SA]
   - code: GEOL215
+    name: "Elements of Geology for Civil Engineering"
+    credits: 16
     year: 2
     sem: 2
     prereqs:                    # sheet: same aggregate gate as ENSV2SE
       - {min_credits: 62, level: 1}
       - {min_sem: 2}
   - code: MATH248
+    name: "Mathematics 2B (Eng)"
+    credits: 16
     year: 2
     sem: 2
     prereqs: [MATH238, MATH141]
 
   # ---- Year 3, Semester 1 -------------------------------------------------
   - code: ENCV3FA
+    name: "Fluids 2"
+    credits: 16
     year: 3
     sem: 1
     prereqs: [ENCV2FL]
   - code: ENCV3G1
+    name: "Geotechnical Engineering Studies 1"
+    credits: 16
     year: 3
     sem: 1
     # Sheet: ">= 144cr total, >=32cr level 2, passed all 1st year". There are
@@ -222,42 +258,60 @@ modules:
       - {min_credits: 144, level: 1}
       - {min_credits: 32, level: 2}
   - code: ENCV3ST
+    name: "Structures 3"
+    credits: 16
     year: 3
     sem: 1
     prereqs: [ENCV2SA, ENCV2SB]
   - code: ENCV3TT
+    name: "Transport 1"
+    credits: 16
     year: 3
     sem: 1
     prereqs:
       - {min_year: 3}           # sheet: "Must be in 3rd yr of study"
   - code: STAT370
+    name: "Engineering Statistics"
+    credits: 8
     year: 3
     sem: 1
     prereqs: [MATH248]          # sheet: MATH248 (DP)
 
   # ---- Year 3, Semester 2 -------------------------------------------------
   - code: ENCV3CW
+    name: "Civil CADD Workshop"
+    credits: 0
     year: 3
     sem: 2
     is_dp: true
     prereqs: [ENCV3ST, ENCV2SD] # sheet: ENCV3ST (DP); ENCV2SD
   - code: ENCV3FB
+    name: "Fluids 3"
+    credits: 16
     year: 3
     sem: 2
     prereqs: [ENCV2FL, STAT370]
   - code: ENCV3G2
+    name: "Geotechnical Engineering Studies 2"
+    credits: 16
     year: 3
     sem: 2
     prereqs: [ENCV3G1]
   - code: ENCV3SD
+    name: "Structural Design 2"
+    credits: 16
     year: 3
     sem: 2
     prereqs: [ENCV2SD, ENCV3ST]
   - code: ENCV3TP
+    name: "Transport 2"
+    credits: 8
     year: 3
     sem: 2
     prereqs: [ENCV3G1, ENCV3TT, GEOL215]
   - code: ENCV3MS
+    name: "Mathematical Systems"
+    credits: 8
     year: 3
     sem: 2
     prereqs: [MATH238, MATH248, STAT370]
@@ -265,6 +319,8 @@ modules:
 
   # ---- Year 4, Semester 1 -------------------------------------------------
   - code: ENCH4ML
+    name: "Engineering Management & Labour Relations"
+    credits: 8
     year: 4
     sem: 1
     # Sheet: "All first year modules, 96 credits of 2nd year modules".
@@ -272,18 +328,26 @@ modules:
       - {min_credits: 144, level: 1}
       - {min_credits: 96, level: 2}
   - code: ENCV4GS
+    name: "Ground and Structural Engineering"
+    credits: 16
     year: 4
     sem: 1
     prereqs: [ENCV3G1, ENCV3G2, ENCV3SD, ENCV3ST]
   - code: ENCV4TE
+    name: "Transport & Environmental Management"
+    credits: 16
     year: 4
     sem: 1
     prereqs: [ENCV3TT]
   - code: ENCV4WE
+    name: "Water & Environmental Engineering"
+    credits: 16
     year: 4
     sem: 1
     prereqs: [ENCV2FL, ENCV3FA, ENCV3FB]
   - code: ENPD7PP
+    name: "Professional Practice"
+    credits: 8
     year: 4
     sem: 1
     prereqs:
@@ -298,21 +362,24 @@ modules:
     sem: 2
     # Sheet: "Passed all preceding core modules in Program".
     prereqs:
-      - all: &all_core [CHEM191, ENCV1ED, ENCV1EP, ENME1EM, MATH141, MATH142, PHYS152,
-                        CHEM181, ENCH1TC, ENME1DR, MATH131, MATH132, PHYS151,
+      - all: &all_core [CHEM181, ENCH1TC, ENME1DR, MATH131, MATH132, PHYS151,
+                        CHEM191, ENCV1ED, ENME1EM, MATH141, MATH142, PHYS152, ENCV1EP,
                         ENCV2MT, ENCV2SA, ENSV2SE, MATH238,
                         ENCV2FL, ENCV2MW, ENCV2SB, ENCV2SD, GEOL215, MATH248,
                         ENCV3FA, ENCV3G1, ENCV3ST, ENCV3TT, STAT370,
-                        ENCV3CW, ENCV3FB, ENCV3G2, ENCV3MS, ENCV3SD, ENCV3TP,
-                        ENCH4ML, ENCV4GS, ENCV4TE, ENCV4WE, ENPD7PP,
-                        ENCV4DE, ENCV4DS, ENCV4VW, ENPD7CL]
+                        ENCV3CW, ENCV3FB, ENCV3G2, ENCV3SD, ENCV3TP, ENCV3MS,
+                        ENCH4ML, ENCV4GS, ENCV4TE, ENCV4WE, ENPD7PP]
   - code: ENCV4DS
+    name: "Dissertation"
+    credits: 24
     year: 4
     sem: 2
     prereqs:
       - all: *all_core          # same "all preceding core" gate as ENCV4DE
-  - {code: ENCV4VW, year: 4, sem: 2, is_dp: true}
+  - {code: ENCV4VW, name: "Practical Vacation Work", credits: 0, year: 4, sem: 2, is_dp: true}
   - code: ENPD7CL
+    name: "Management of Construction Contracts"
+    credits: 8
     year: 4
     sem: 2
     prereqs:

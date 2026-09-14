@@ -1,0 +1,825 @@
+# its_reference.yaml — ITS ground truth, REFERENCE ONLY.
+# Not loaded at runtime. Diff the programme files against this after each
+# August extract; anything that differs is either a handbook change or a bug.
+
+meta:
+  calendar_year: 2027
+  generated: 2026-09-14
+  relations: {P: prerequisite, C: corequisite, S: substitute, E: excluded}
+  and_or_note: >-
+    ITS 'And/Or Indicator' is inconsistently captured. A blank means AND.
+    A number groups alternatives, but the data uses both one-group-per-
+    alternative and one-group-holding-all-alternatives. Treat every numbered
+    row as unverified and confirm against the handbook.
+
+group_setups:
+  - group: CV2A
+    qual: ENG-CV
+    major: ENCV
+    description: Core modules year 2
+    study_periods: [2]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 56
+    max_credits: 56
+    modules: [ENCV2MT, ENCV2SA, ENSV2SE, MATH238]
+  - group: CV2B
+    qual: ENG-CV
+    major: ENCV
+    description: Core modules year 2
+    study_periods: [2]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 56
+    max_credits: 72
+    modules: [ENCV2FL, ENCV2MW, ENCV2SB, ENCV2SD, GEOL215, MATH248]
+  - group: CV3A
+    qual: ENG-CV
+    major: ENCV
+    description: Core modules year 3
+    study_periods: [3]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 56
+    max_credits: 72
+    modules: [ENCV3FA, ENCV3G1, ENCV3ST, ENCV3TT, STAT370]
+  - group: CV3B
+    qual: ENG-CV
+    major: ENCV
+    description: Core modules year 3
+    study_periods: [3]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 56
+    max_credits: 64
+    modules: [ENCV3CW, ENCV3FB, ENCV3G2, ENCV3MS, ENCV3SD, ENCV3TP]
+  - group: CV4A
+    qual: ENG-CV
+    major: ENCV
+    description: Core modules year 4
+    study_periods: [4]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 56
+    max_credits: 64
+    modules: [ENCH4ML, ENCV4GS, ENCV4TE, ENCV4WE, ENPD7PP]
+  - group: CV4B
+    qual: ENG-CV
+    major: ENCV
+    description: Core modules year 4
+    study_periods: [4]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 56
+    max_credits: 56
+    modules: [ENCV4DE, ENCV4DS, ENCV4VW, ENPD7CL]
+  - group: BR11C1
+    qual: ENG-CV
+    major: null
+    description: "E$Compulsory Module to complete"
+    study_periods: [2]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 0
+    max_credits: 0
+    modules: [EDSJ1CS]
+  - group: BR11C2
+    qual: ENG-CV
+    major: null
+    description: "E$Compulsory Module to complete"
+    study_periods: [1]
+    blocks: [2]
+    offering_types: [HA, PA]
+    min_credits: 0
+    max_credits: 0
+    modules: [EDSJ1CS]
+  - group: CV1B
+    qual: ENG-CV
+    major: null
+    description: Core modules year 1
+    study_periods: [1]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 24
+    max_credits: 72
+    modules: [CHEM191, ENCV1ED, ENCV1EP, ENME1EM, MATH141, MATH142, PHYS152]
+  - group: ELEC21
+    qual: ENG-CV
+    major: null
+    description: "E$Other faculty elective year 2"
+    study_periods: [2]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 0
+    max_credits: 16
+    modules: [ANTH101, ECON101, FREN101, HIST104, LING101, POLS101, RELG101, ZULM101, ZULM105, ZULN101]
+  - group: ELEC32
+    qual: ENG-CV
+    major: null
+    description: "E$Other faculty elective year 3"
+    study_periods: [3]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 0
+    max_credits: 16
+    modules: [ACCT103, ENGL102, HIST105, INST102, LAWS1AS, LING102, POLS102, PSYC102, RELG106, SPAN102, ZULM102, ZULN102]
+  - group: EN1A
+    qual: ENG-CV
+    major: null
+    description: Core modules year 1
+    study_periods: [1]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 0
+    max_credits: 72
+    modules: [CHEM181, ENCH1TC, ENME1DR, MATH131, MATH132, PHYS151]
+  - group: EN1A-P
+    qual: ENG-CV
+    major: null
+    description: Core modules year 1
+    study_periods: [1]
+    blocks: [1]
+    offering_types: [PA]
+    min_credits: 0
+    max_credits: 72
+    modules: [CHEM163, ENCH1TC, ENME1DR, MATH131, MATH132, PHYS110]
+  - group: EN1B-P
+    qual: ENG-CV
+    major: null
+    description: Core modules year 1
+    study_periods: [1]
+    blocks: [2]
+    offering_types: [PA]
+    min_credits: 72
+    max_credits: 72
+    modules: [CHEM173, ENAG1DE, ENAG1MT, ENCV1EP, MATH141, MATH142, PHYS120]
+  - group: FAC1EL
+    qual: ENG-CV
+    major: null
+    description: "E$Other faculty elective year 4"
+    study_periods: [4]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 8
+    max_credits: 16
+    modules: [ANTH101, ECHS101, ECON101, ENEL4EB, ENEL4EE, FREN101, HIST104, LING101, POLS101, RELG101, ZULM101, ZULM105, ZULN101]
+  - group: FAC2EL
+    qual: ENG-CV
+    major: null
+    description: "E$Other faculty elective year 4"
+    study_periods: [4]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 8
+    max_credits: 16
+    modules: [ENEL4EB, ENEL4EE, ENGL102, HIST105, LAWS1AS, LING102, POLS102, PSYC102, RELG106, SPAN102, ZULM102, ZULM106, ZULN101, ZULN102]
+  - group: EAP2V1
+    qual: ENGEAP
+    major: ENCV
+    description: Access Civil Sem 1
+    study_periods: [1, 2]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 16
+    max_credits: 32
+    modules: [CHEM181, ENSV2SE, MATH132]
+  - group: EAP2V2
+    qual: ENGEAP
+    major: ENCV
+    description: Access Civil Sem 2
+    study_periods: [1, 2]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 16
+    max_credits: 104
+    modules: [CHEM191, ENCV1EP, MATH142, ZULM105, ZULN101]
+  - group: ENCV3A
+    qual: ENGEAP
+    major: ENCV
+    description: ENG-CV Yr3 core module
+    study_periods: [3]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 56
+    max_credits: 56
+    modules: [ENCV2MT, ENCV2SA, ENSV2SE, MATH238]
+  - group: ENCV3B
+    qual: ENGEAP
+    major: ENCV
+    description: ENG-CV Yr3 core module
+    study_periods: [3]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 72
+    max_credits: 72
+    modules: [ENCV2FL, ENCV2MW, ENCV2SB, ENCV2SD, GEOL215, MATH248]
+  - group: ENCV4A
+    qual: ENGEAP
+    major: ENCV
+    description: ENG-CV Yr4 core module
+    study_periods: [4]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 72
+    max_credits: 72
+    modules: [ENCV3FA, ENCV3G1, ENCV3ST, ENCV3TT, STAT370]
+  - group: ENCV4B
+    qual: ENGEAP
+    major: ENCV
+    description: ENG-CV Yr4 core modules
+    study_periods: [4]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 72
+    max_credits: 72
+    modules: [ENCV3CW, ENCV3FB, ENCV3G2, ENCV3SD, ENCV3TP, MATH360]
+  - group: ENCV5A
+    qual: ENGEAP
+    major: ENCV
+    description: ENG-CV Yr5 core modules
+    study_periods: [5]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 64
+    max_credits: 64
+    modules: [ENCH4ML, ENCV4GS, ENCV4TE, ENCV4WE, ENPD7PP]
+  - group: ENCV5B
+    qual: ENGEAP
+    major: ENCV
+    description: ENG-CV Yr5 core module
+    study_periods: [5]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 56
+    max_credits: 56
+    modules: [ENCV4DE, ENCV4DS, ENCV4VW, ENPD7CL]
+  - group: ENCV5C
+    qual: ENGEAP
+    major: ENCV
+    description: ENG-CV Yr elect
+    study_periods: [5]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 8
+    max_credits: 8
+    modules: [ENEL4EB]
+  - group: ENCV5D
+    qual: ENGEAP
+    major: ENCV
+    description: ENG-CV Yr5 elect
+    study_periods: [5]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 8
+    max_credits: 8
+    modules: [ENEL4EE]
+  - group: BR11C1
+    qual: ENGEAP
+    major: null
+    description: "E$Compulsory Module to complete"
+    study_periods: [1]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 0
+    max_credits: 0
+    modules: [EDSJ1CS]
+  - group: BR11C2
+    qual: ENGEAP
+    major: null
+    description: "E$Compulsory Module to complete"
+    study_periods: [1]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 0
+    max_credits: 0
+    modules: [EDSJ1CS]
+  - group: EAP0
+    qual: ENGEAP
+    major: null
+    description: Engineering Access Yr
+    study_periods: [1]
+    blocks: [0]
+    offering_types: [HA]
+    min_credits: 32
+    max_credits: 64
+    modules: [MATH160, PHYS160]
+  - group: EAP1
+    qual: ENGEAP
+    major: null
+    description: Engineering Access Yr 1
+    study_periods: [1]
+    blocks: [1]
+    offering_types: [HA]
+    min_credits: 8
+    max_credits: 32
+    modules: [ENCH160, ENME160]
+  - group: EAP2
+    qual: ENGEAP
+    major: null
+    description: Engineering Access Sem 2
+    study_periods: [1]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: null
+    max_credits: 32
+    modules: [ENAG160, ENAG161]
+  - group: EAP2C
+    qual: ENGEAP
+    major: null
+    description: Engineering Access Yr 2
+    study_periods: [2]
+    blocks: [0]
+    offering_types: [HA]
+    min_credits: 32
+    max_credits: 64
+    modules: [CHEM181, MATH132, MATH161, PHYS163]
+  - group: EAP2C2
+    qual: ENGEAP
+    major: null
+    description: Engineering Access Yr 2 Sem 2
+    study_periods: [1, 2]
+    blocks: [2]
+    offering_types: [HA]
+    min_credits: 16
+    max_credits: 104
+    modules: [CHEM191, MATH142]
+
+prerequisites:
+  - module: ACCT103
+    relation: substitute
+    involves: ACCT102
+  - module: ANTH101
+    relation: substitute
+    involves: ANTH103
+  - module: CHEM191
+    relation: prerequisite
+    involves: CHEM181
+    min_mark: 40
+  - module: ENAG160
+    relation: substitute
+    involves: ENAG1DE
+  - module: ENAG160
+    relation: substitute
+    involves: ENCV1ED
+  - module: ENAG160
+    relation: substitute
+    involves: ENEL1ED
+  - module: ENAG160
+    relation: substitute
+    involves: ENME1ED
+  - module: ENAG160
+    relation: substitute
+    involves: ENME1EM
+  - module: ENAG161
+    relation: substitute
+    involves: CHEM171
+  - module: ENAG161
+    relation: substitute
+    involves: ENME1EM
+  - module: ENAG161
+    relation: substitute
+    involves: ENME1MT
+  - module: ENAG1DE
+    relation: substitute
+    involves: ENAG160
+  - module: ENAG1DE
+    relation: substitute
+    involves: ENCH1EA
+  - module: ENAG1DE
+    relation: substitute
+    involves: ENCH1EB
+  - module: ENAG1DE
+    relation: substitute
+    involves: ENCV1ED
+  - module: ENAG1DE
+    relation: substitute
+    involves: ENEL1ED
+  - module: ENAG1DE
+    relation: substitute
+    involves: ENME1ED
+  - module: ENAG1MT
+    relation: substitute
+    involves: ENAG161
+  - module: ENAG1MT
+    relation: substitute
+    involves: ENME1EM
+  - module: ENCH160
+    relation: substitute
+    involves: ENCH1TC
+  - module: ENCH1TC
+    relation: substitute
+    involves: ENAG1EN
+  - module: ENCH1TC
+    relation: substitute
+    involves: ENCH160
+  - module: ENCV1ED
+    relation: prerequisite
+    involves: ENME1DR
+  - module: ENCV1ED
+    relation: substitute
+    involves: ENAG160
+  - module: ENCV1ED
+    relation: substitute
+    involves: ENAG1DE
+  - module: ENCV1EP
+    relation: substitute
+    involves: ENCV1CW
+    qual: ENG-CV
+  - module: ENCV2FL
+    relation: prerequisite
+    involves: MATH142
+  - module: ENCV2FL
+    relation: prerequisite
+    involves: PHYS110
+    group: 2
+  - module: ENCV2FL
+    relation: prerequisite
+    involves: PHYS151
+    group: 1
+  - module: ENCV2MT
+    relation: prerequisite
+    involves: ENME1EM
+  - module: ENCV2MW
+    relation: prerequisite
+    involves: ENCV2MT
+  - module: ENCV2SA
+    relation: prerequisite
+    involves: MATH141
+  - module: ENCV2SA
+    relation: prerequisite
+    involves: MATH142
+  - module: ENCV2SB
+    relation: prerequisite
+    involves: ENCV2SA
+  - module: ENCV2SD
+    relation: prerequisite
+    involves: ENCV2SA
+  - module: ENCV2SD
+    relation: substitute
+    involves: ENCV2DE
+  - module: ENCV3CW
+    relation: prerequisite
+    involves: ENCV2SD
+  - module: ENCV3FA
+    relation: prerequisite
+    involves: ENCV2FL
+  - module: ENCV3FB
+    relation: prerequisite
+    involves: ENCV2FL
+  - module: ENCV3FB
+    relation: prerequisite
+    involves: STAT370
+    min_mark: 40
+  - module: ENCV3G1
+    relation: substitute
+    involves: ENCV2GA
+  - module: ENCV3G1
+    relation: substitute
+    involves: ENCV2GB
+  - module: ENCV3G1
+    relation: substitute
+    involves: ENCV3GT
+  - module: ENCV3G2
+    relation: prerequisite
+    involves: ENCV3G1
+  - module: ENCV3G2
+    relation: substitute
+    involves: ENCV3GT
+  - module: ENCV3MS
+    relation: prerequisite
+    involves: MATH238
+  - module: ENCV3MS
+    relation: prerequisite
+    involves: MATH248
+  - module: ENCV3MS
+    relation: prerequisite
+    involves: STAT370
+  - module: ENCV3MS
+    relation: substitute
+    involves: MATH360
+  - module: ENCV3SD
+    relation: prerequisite
+    involves: ENCV2SD
+  - module: ENCV3SD
+    relation: prerequisite
+    involves: ENCV3ST
+  - module: ENCV3SD
+    relation: substitute
+    involves: ENCV3DA
+  - module: ENCV3SD
+    relation: substitute
+    involves: ENCV3DB
+  - module: ENCV3ST
+    relation: prerequisite
+    involves: ENCV2SA
+  - module: ENCV3ST
+    relation: prerequisite
+    involves: ENCV2SB
+  - module: ENCV3TP
+    relation: prerequisite
+    involves: ENCV3G1
+  - module: ENCV3TP
+    relation: prerequisite
+    involves: ENCV3TT
+  - module: ENCV3TP
+    relation: prerequisite
+    involves: GEOL215
+  - module: ENCV3TT
+    relation: substitute
+    involves: ENCV2GA
+  - module: ENCV3TT
+    relation: substitute
+    involves: ENCV2GB
+  - module: ENCV3TT
+    relation: substitute
+    involves: ENCV3TA
+  - module: ENCV3TT
+    relation: substitute
+    involves: ENCV3TB
+  - module: ENCV4GS
+    relation: prerequisite
+    involves: ENCV3G1
+  - module: ENCV4GS
+    relation: prerequisite
+    involves: ENCV3G2
+  - module: ENCV4GS
+    relation: prerequisite
+    involves: ENCV3SD
+  - module: ENCV4GS
+    relation: prerequisite
+    involves: ENCV3ST
+  - module: ENCV4TE
+    relation: prerequisite
+    involves: ENCV3TT
+  - module: ENCV4WE
+    relation: prerequisite
+    involves: ENCV2FL
+  - module: ENCV4WE
+    relation: prerequisite
+    involves: ENCV3FA
+  - module: ENCV4WE
+    relation: prerequisite
+    involves: ENCV3FB
+  - module: ENGL102
+    relation: prerequisite
+    involves: ENGL101
+    group: 1
+  - module: ENME160
+    relation: substitute
+    involves: ENME1DR
+  - module: ENME1DR
+    relation: substitute
+    involves: ENME160
+  - module: ENME1EM
+    relation: substitute
+    involves: ENAG161
+  - module: ENME1EM
+    relation: substitute
+    involves: ENAG1MT
+  - module: ENME1EM
+    relation: substitute
+    involves: ENME1MT
+  - module: LAWS1AS
+    relation: substitute
+    involves: DLC1CM2
+  - module: LAWS1AS
+    relation: substitute
+    involves: HRMG1A0
+  - module: LAWS1AS
+    relation: substitute
+    involves: HRMG1C0
+  - module: LAWS1AS
+    relation: substitute
+    involves: LAWS1IL
+    qual: ENG-CV
+  - module: MATH131
+    relation: substitute
+    involves: MATH130
+  - module: MATH131
+    relation: substitute
+    involves: MATH134
+  - module: MATH131
+    relation: substitute
+    involves: MATH150
+  - module: MATH131
+    relation: substitute
+    involves: MATH151
+  - module: MATH131
+    relation: substitute
+    involves: MATH160
+  - module: MATH131
+    relation: substitute
+    involves: MATH195
+  - module: MATH141
+    relation: prerequisite
+    involves: MATH131
+    min_mark: 40
+  - module: MATH141
+    relation: substitute
+    involves: MATH140
+  - module: MATH141
+    relation: substitute
+    involves: MATH143
+  - module: MATH141
+    relation: substitute
+    involves: MATH145
+  - module: MATH141
+    relation: substitute
+    involves: MATH161
+  - module: MATH141
+    relation: substitute
+    involves: MATH196
+  - module: MATH142
+    relation: prerequisite
+    involves: MATH131
+    min_mark: 40
+  - module: MATH142
+    relation: prerequisite
+    involves: MATH132
+    min_mark: 40
+  - module: MATH160
+    relation: substitute
+    involves: MATH131
+  - module: MATH161
+    relation: substitute
+    involves: MATH141
+  - module: MATH238
+    relation: prerequisite
+    involves: MATH131
+  - module: MATH238
+    relation: prerequisite
+    involves: MATH141
+    min_mark: 40
+  - module: MATH248
+    relation: prerequisite
+    involves: MATH141
+  - module: MATH248
+    relation: prerequisite
+    involves: MATH238
+    min_mark: 40
+  - module: MATH360
+    relation: prerequisite
+    involves: MATH248
+    min_mark: 40
+  - module: MATH360
+    relation: substitute
+    involves: ENCV3MS
+  - module: PHYS110
+    relation: corequisite
+    involves: MATH131
+    qual: ENG-CV
+  - module: PHYS110
+    relation: substitute
+    involves: PHYS113
+  - module: PHYS110
+    relation: substitute
+    involves: PHYS131
+    min_mark: 60
+  - module: PHYS110
+    relation: substitute
+    involves: PHYS151
+  - module: PHYS110
+    relation: substitute
+    involves: PHYS195
+  - module: PHYS120
+    relation: corequisite
+    involves: MATH140
+    group: 1
+  - module: PHYS120
+    relation: corequisite
+    involves: MATH196
+    group: 2
+  - module: PHYS120
+    relation: prerequisite
+    involves: PHYS110
+    min_mark: 40
+  - module: PHYS120
+    relation: substitute
+    involves: PHYS114
+  - module: PHYS120
+    relation: substitute
+    involves: PHYS152
+  - module: PHYS120
+    relation: substitute
+    involves: PHYS162
+  - module: PHYS120
+    relation: substitute
+    involves: PHYS196
+  - module: PHYS151
+    relation: substitute
+    involves: PHYS110
+  - module: PHYS151
+    relation: substitute
+    involves: PHYS131
+    min_mark: 60
+  - module: PHYS151
+    relation: substitute
+    involves: PHYS195
+  - module: PHYS152
+    relation: prerequisite
+    involves: PHYS151
+    min_mark: 40
+  - module: PHYS152
+    relation: substitute
+    involves: PHYS120
+  - module: PHYS152
+    relation: substitute
+    involves: PHYS132
+    min_mark: 60
+  - module: PHYS152
+    relation: substitute
+    involves: PHYS196
+  - module: PSYC102
+    relation: substitute
+    involves: NURS3RP
+  - module: SPAN102
+    relation: prerequisite
+    involves: SPAN101
+  - module: STAT370
+    relation: prerequisite
+    involves: MATH248
+    min_mark: 40
+  - module: ZULM105
+    relation: substitute
+    involves: ZULN101
+  - module: ZULN101
+    relation: substitute
+    involves: ZULM101
+
+# Symmetric 'substitute' pairs: ITS's own equivalence table. Cross-check the
+# augmented twin pairs in augmented_civil.yaml against this list.
+substitutes:
+  - [ACCT102, ACCT103]
+  - [AGEC210, ECON101]
+  - [ANTH101, ANTH103]
+  - [CHEM171, ENAG161]
+  - [DLC1CM2, LAWS1AS]
+  - [ENAG160, ENAG1DE]
+  - [ENAG160, ENCV1ED]
+  - [ENAG160, ENEL1ED]
+  - [ENAG160, ENME1ED]
+  - [ENAG160, ENME1EM]
+  - [ENAG161, ENAG1MT]
+  - [ENAG161, ENME1EM]
+  - [ENAG161, ENME1MT]
+  - [ENAG1DE, ENCH1EA]
+  - [ENAG1DE, ENCH1EB]
+  - [ENAG1DE, ENCV1ED]
+  - [ENAG1DE, ENEL1ED]
+  - [ENAG1DE, ENME1ED]
+  - [ENAG1EN, ENCH1TC]
+  - [ENAG1MT, ENME1EM]
+  - [ENCH160, ENCH1TC]
+  - [ENCV1CW, ENCV1EP]
+  - [ENCV2DE, ENCV2SD]
+  - [ENCV2GA, ENCV3G1]
+  - [ENCV2GA, ENCV3TT]
+  - [ENCV2GB, ENCV3G1]
+  - [ENCV2GB, ENCV3TT]
+  - [ENCV3DA, ENCV3SD]
+  - [ENCV3DB, ENCV3SD]
+  - [ENCV3G1, ENCV3GT]
+  - [ENCV3G2, ENCV3GT]
+  - [ENCV3MS, MATH360]
+  - [ENCV3TA, ENCV3TT]
+  - [ENCV3TB, ENCV3TT]
+  - [ENME160, ENME1DR]
+  - [ENME1EM, ENME1MT]
+  - [ENSV2SC, ENSV2SE]
+  - [HRMG1A0, LAWS1AS]
+  - [HRMG1C0, LAWS1AS]
+  - [LAWS1AS, LAWS1FL]
+  - [LAWS1AS, LAWS1IL]
+  - [MATH105, MATH131]
+  - [MATH130, MATH131]
+  - [MATH131, MATH134]
+  - [MATH131, MATH150]
+  - [MATH131, MATH151]
+  - [MATH131, MATH160]
+  - [MATH131, MATH195]
+  - [MATH140, MATH141]
+  - [MATH141, MATH143]
+  - [MATH141, MATH145]
+  - [MATH141, MATH161]
+  - [MATH141, MATH196]
+  - [NURS3RP, PSYC102]
+  - [PHYS110, PHYS113]
+  - [PHYS110, PHYS131]
+  - [PHYS110, PHYS151]
+  - [PHYS110, PHYS161]
+  - [PHYS110, PHYS195]
+  - [PHYS114, PHYS120]
+  - [PHYS120, PHYS132]
+  - [PHYS120, PHYS133]
+  - [PHYS120, PHYS152]
+  - [PHYS120, PHYS162]
+  - [PHYS120, PHYS196]
+  - [PHYS131, PHYS151]
+  - [PHYS132, PHYS152]
+  - [PHYS133, PHYS152]
+  - [PHYS151, PHYS161]
+  - [PHYS151, PHYS195]
+  - [PHYS152, PHYS162]
+  - [PHYS152, PHYS196]
+  - [ZULM101, ZULN101]
+  - [ZULM105, ZULN101]
