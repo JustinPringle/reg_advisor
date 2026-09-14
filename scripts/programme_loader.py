@@ -184,7 +184,9 @@ def load_programme(path: str, validate: bool = True, strict: bool = True,
     # engines and the JS mirror already evaluate.
     _expand_preceding_core(modules)
 
+    year_credits = {int(k): float(v) for k, v in (raw.get("year_credits") or {}).items()}
     cur = {"programme": prog, "modules": modules, "elective_groups": {},
+           "year_credits": year_credits,
            "rules": merge_rules(raw.get("rules")),
            "external_prereqs": sorted(set(external)),
            "equivalences": equivalences, "twins": twins,
@@ -409,6 +411,37 @@ def validate_programme(cur: dict[str, Any]) -> dict[str, list[str]]:
         elif not ov["reason"]:
             errors.append(f"catalogue_overrides: {code}.{field} has no reason -- "
                           f"an undocumented override is a second source of truth")
+
+    # The handbook prints degree credits per year of study. If the module list
+    # no longer adds up to it, one of the two is wrong and a student is being
+    # advised against a curriculum that does not exist. A warning, not an error:
+    # a disagreeing year total is a question for the handbook, and blocking every
+    # load until it is answered helps nobody.
+    want = cur.get("year_credits") or {}
+    if want:
+        got: dict[int, float] = {}
+        counted: set[str] = set()
+        for m in cur.get("modules", []):
+            g = m.get("choice")            # one slot, counted once
+            if g:
+                if g in counted:
+                    continue
+                counted.add(g)
+            cr = m.get("credits")
+            if isinstance(cr, (int, float)) and isinstance(m.get("year"), int):
+                got[m["year"]] = got.get(m["year"], 0.0) + float(cr)
+        for yr in sorted(set(want) | set(got)):
+            a, b = want.get(yr), got.get(yr, 0.0)
+            if a is None:
+                warnings.append(f"year {yr}: modules award {b:.0f} credits but "
+                                f"year_credits does not list the year")
+            elif a != b:
+                warnings.append(f"year {yr}: handbook says {a:.0f} degree credits, "
+                                f"the module list awards {b:.0f} ({b - a:+.0f})")
+        prog_total = float(cur["programme"].get("total_credits") or 0)
+        if sum(want.values()) != prog_total:
+            warnings.append(f"year_credits sums to {sum(want.values()):.0f}, "
+                            f"programme.total_credits says {prog_total:.0f}")
 
     cyc = _find_cycle(codes)
     if cyc:

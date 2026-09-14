@@ -33,6 +33,10 @@ programme:
   name: Civil Engineering
   total_credits: 576
 regulation_years: 4
+# Degree credits per year of study, from the handbook. Checked by
+# catalogue_lint --credits; the loader warns if the module list drifts from it.
+#   144 x 4 = 576
+year_credits: {1: 144, 2: 144, 3: 144, 4: 144}
 # Augmented <-> mainstream first-year twins (handbook equivalence table). An
 # augmented-entry student who articulates into mainstream Civil sits these eight
 # modules under their augmented codes; each is the handbook equivalent of a

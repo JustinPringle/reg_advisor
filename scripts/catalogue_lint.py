@@ -201,6 +201,21 @@ def credit_audit(programme_path: str) -> int:
         print(f"{n:>3}  Y{slot[0]}S{slot[1]:<4} {per[slot]:>5.0f} {cum:>11.0f} "
               f"{str(want):>11}  {note}")
 
+    want = {int(k): float(v) for k, v in (raw.get("year_credits") or {}).items()}
+    if want:
+        print(f"\n{'year':>4} {'handbook':>9} {'modules':>8}  note")
+        by_year: dict[int, float] = {}
+        for slot, v in per.items():
+            if isinstance(slot[0], int):
+                by_year[slot[0]] = by_year.get(slot[0], 0.0) + v
+        for yr in sorted(set(want) | set(by_year)):
+            a, b = want.get(yr), by_year.get(yr, 0.0)
+            note = "" if a == b else ("year not in year_credits" if a is None
+                                      else f"{b - a:+.0f} against the handbook")
+            print(f"{yr:>4} {('-' if a is None else f'{a:.0f}'):>9} {b:>8.0f}  {note}")
+            if a != b:
+                bad += 1
+
     declared = (raw.get("programme") or {}).get("total_credits")
     print(f"\ndegree credits awarded: {cum:.0f}"
           + (f" (programme.total_credits says {declared})" if declared is not None else ""))

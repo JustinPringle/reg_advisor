@@ -1,0 +1,72 @@
+diff --git a/programmes/augmented_civil.yaml b/programmes/augmented_civil.yaml
+index d7677ee..b06bde9 100644
+--- a/programmes/augmented_civil.yaml
++++ b/programmes/augmented_civil.yaml
+@@ -53,6 +53,12 @@ external_prereqs:
+ # year totals only, so this block is the only record of them.
+ #   64 + 112 + 128 + 128 + 144 = 576
+ year_credits: {1: 64, 2: 112, 3: 128, 4: 128, 5: 144}
++# Nine of the ten semesters also land on the rules.ers normal-load table below.
++# The exception is Year 3: 56/72 against the template's 64/64. Civil's Level 2 is
++# not eight 16cr modules -- ENCV2MT (8) sits in S1 and ENCV2FL (8) in S2, and
++# ENCV2FL cannot move because it gates ENCV3FA. The year total is right; the
++# split is the same generic-template deviation the handbook shows at Level 4 S2,
++# where Civil runs 2x24 + 3x8 rather than 2x16 + 2x8 + 1x32.
+ 
+ catalogue_overrides:
+   # TWO KINDS OF CREDIT. Degree credit is what counts toward the 576 needed to
+@@ -229,7 +235,17 @@ modules:
+     prereqs: 
+       - {any: [{code: MATH160, min_mark: 50}, {code: MATH131, min_mark: 50}]}
+       - {any: [{code: MATH161, min_mark: 40}, {code: MATH141, min_mark: 40}]} #[*TW_M1A, *TW_M1B]        # was MATH131, MATH141
+-  - {code: "ELECTIVE_Y3S1", name: "Elective", credits: 16, year: 3, sem: 1, type: elective}
++  # Handbook: Level 2 year carries 8 x 16cr programme-specific modules. Civil's
++  # own Level 2 supplies only 112 of those credits once ENSV2SE moves to Year 2
++  # (A1c), so one 16cr Level 3 module is pulled forward. ENCV3TT is the only
++  # candidate: ENCV3G1, the other 16cr Level 3 module with no Level 3 prereq,
++  # needs 32cr at Level 2 and a Year 3 augmented student has 16.
++  # DECISION A1d (J. Pringle 2026-09-14): ENCV3TT sits in augmented Y3S1.
++  - code: ENCV3TT
++    year: 3
++    sem: 1
++    prereqs:
++      - {min_year: 3}            # pulled forward; mainstream reads "3rd yr of study"
+   
+   
+ 
+@@ -284,17 +300,12 @@ modules:
+     sem: 1
+     prereqs: [ENCV2SA, ENCV2SB]
+ 
+-  - code: ENCV3TT
+-    year: 4
+-    sem: 1
+-    prereqs:
+-      - {min_year: 4}
+-                # sheet: "Must be in 3rd yr of study"
+ 
+   - code: STAT370
+     year: 4
+     sem: 1
+     prereqs: [MATH248]
++  - {code: "ELECTIVE_Y4S1", name: "Elective", credits: 8, year: 4, sem: 1, type: elective}
+ 
+   # ---- Sem 2 -------------------------------------------------------------
+   - code: ENCV3CW
+@@ -322,7 +333,7 @@ modules:
+     year: 4
+     sem: 2
+     prereqs: [MATH238, MATH248, STAT370]
+-  - {code: "ELECTIVE_Y4S2", name: "Elective", credits: 8, year: 4, sem: 2, type: elective}
++
+ 
+   # ===================================================================
+   # LEVEL 4 — AUGMENTED YEAR 5  (mainstream Level 4, year hint +1)
+@@ -370,6 +381,7 @@ modules:
+     prereqs:
+       - {preceding_core: true}   # same gate as ENCV4DE
+   - {code: ENCV4VW, year: 5, sem: 2, is_dp: true}
++  - {code: "ELECTIVE_Y5S2", name: "Elective", credits: 16, year: 5, sem: 2, type: elective}
+   - code: ENPD7CL
+     year: 5
+     sem: 2
