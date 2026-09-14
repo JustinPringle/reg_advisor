@@ -100,7 +100,7 @@ modules:
     level: 1
     blocks: [2]
   ENCH160:
-    name: Augmented Tech. Communication for  Engineers
+    name: Augmented Tech. Communication for Engineers
     credits: 8
     level: 1
     blocks: [1]

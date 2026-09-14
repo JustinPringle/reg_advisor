@@ -45,6 +45,7 @@ _TERM_SHAPES: set[frozenset[str]] = {
     frozenset({"min_credits"}),
     frozenset({"min_credits", "level"}),
     frozenset({"review"}),
+    frozenset({"preceding_core"}),
 }
 
 ELECTIVE_TYPES = {"elective", "free_elective", "core_elective"}
@@ -101,6 +102,19 @@ def load_catalogue(path: str | None = None) -> dict[str, dict[str, Any]]:
     return {str(k): dict(v or {}) for k, v in (raw.get("modules") or {}).items()}
 
 
+def _read_overrides(raw: Any) -> dict[tuple[str, str], dict[str, Any]]:
+    """Index a catalogue_overrides block by (code, field). Malformed entries are
+    dropped here and reported by validate_programme, never applied blind."""
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for o in raw or []:
+        if not isinstance(o, dict):
+            continue
+        code, field = str(o.get("code") or "").strip(), str(o.get("field") or "").strip()
+        if code and field and "value" in o:
+            out[(code, field)] = {"value": o["value"], "reason": str(o.get("reason") or "")}
+    return out
+
+
 # --- Load -------------------------------------------------------------------
 def load_programme(path: str, validate: bool = True, strict: bool = True,
                    catalogue: dict[str, dict[str, Any]] | str | None = None
@@ -117,6 +131,15 @@ def load_programme(path: str, validate: bool = True, strict: bool = True,
         raw = yaml.safe_load(fh) or {}
 
     prog = dict(raw.get("programme") or {})
+    # Declared divergences from the catalogue, applied as if the catalogue said
+    # so. A programme that must value a module differently says it once, here,
+    # with a reason -- so the module entries stay bare and the disagreement is a
+    # decision on the record rather than a restated fact drifting quietly.
+    overrides = _read_overrides(raw.get("catalogue_overrides"))
+    if overrides:
+        catalogue = {c: dict(f) for c, f in catalogue.items()}
+        for (code, field), ov in overrides.items():
+            catalogue.setdefault(code, {})[field] = ov["value"]
     modules: list[dict[str, Any]] = []
     total = 0.0
     seen_groups: set[str] = set()
@@ -156,11 +179,16 @@ def load_programme(path: str, validate: bool = True, strict: bool = True,
             aug, main = str(pair.get("augmented", "")).strip(), str(pair.get("mainstream", "")).strip()
             if aug and main:
                 twins[aug] = main
+    # {preceding_core: true} is shorthand, not a new engine term: expand it here,
+    # once the whole module list is known, into the plain {all: [...]} the
+    # engines and the JS mirror already evaluate.
+    _expand_preceding_core(modules)
+
     cur = {"programme": prog, "modules": modules, "elective_groups": {},
            "rules": merge_rules(raw.get("rules")),
            "external_prereqs": sorted(set(external)),
            "equivalences": equivalences, "twins": twins,
-           "catalogue": catalogue}
+           "catalogue": catalogue, "catalogue_overrides": overrides}
     # cur = {"programme": prog, "modules": modules, "elective_groups": {},
     #        "rules": merge_rules(raw.get("rules"))}
 
@@ -230,6 +258,64 @@ def _collect_reviews(terms: Any) -> list[str]:
     return out
 
 
+# --- preceding_core ---------------------------------------------------------
+def _expand_preceding_core(modules: list[dict[str, Any]]) -> None:
+    """Rewrite every {preceding_core: true} term in place.
+
+    The handbook's capstone gate reads "passed all preceding core modules in
+    programme". Written out by hand it is a 40-line list that has to be edited
+    every time the curriculum moves, and one stale line put ENCV4DE and ENCV4DS
+    in each other's prerequisites. Derive it instead: every prescribed module
+    sitting in a STRICTLY earlier (year, sem) slot than the module asking. A
+    module can therefore never depend on its own semester, so the gate cannot
+    manufacture a cycle.
+
+    Electives are excluded -- a slot, not a named module. Twins are NOT widened
+    here: regadvisor_engine.index_transcript already aliases an equivalent pair
+    into the passed set, so an augmented code satisfies its mainstream twin
+    everywhere, not just in this gate. Widening here would duplicate that logic
+    and clutter every label and missing-list with an "or" the student never
+    needs to read.
+    """
+    slot: dict[str, tuple[int, int]] = {}
+    for m in modules:
+        y, s = m.get("year"), m.get("sem")
+        if isinstance(y, int) and isinstance(s, int):
+            slot[str(m.get("code"))] = (y, s)
+
+    def gate(code: str) -> dict[str, Any]:
+        here = slot.get(code)
+        terms: list[Any] = []
+        if here is None:
+            return {"all": terms}
+        for m in modules:
+            other = str(m.get("code"))
+            if other == code or m.get("type") in ELECTIVE_TYPES:
+                continue
+            there = slot.get(other)
+            if there is None or there >= here:
+                continue
+            terms.append(other)
+        return {"all": terms}
+
+    def walk(term: Any, code: str) -> Any:
+        if isinstance(term, list):
+            return [walk(t, code) for t in term]
+        if isinstance(term, dict):
+            if "preceding_core" in term:
+                return gate(code) if term["preceding_core"] else {"all": []}
+            return {k: (walk(v, code) if k in ("all", "any", "of") else v)
+                    for k, v in term.items()}
+        return term
+
+    for m in modules:
+        code = str(m.get("code"))
+        for key in ("prereqs", "coreqs"):
+            if m.get(key):
+                m[key] = walk(m[key], code)
+        m["review_notes"] = _collect_reviews(m.get("prereqs") or [])
+
+
 # --- Validate ---------------------------------------------------------------
 def validate_programme(cur: dict[str, Any]) -> dict[str, list[str]]:
     """Check a loaded curriculum. Returns {'errors': [...], 'warnings': [...]}.
@@ -264,13 +350,13 @@ def validate_programme(cur: dict[str, Any]) -> dict[str, list[str]]:
             cat_cr = m.get("catalogue_credits")
             if (isinstance(cat_cr, (int, float))
                     and isinstance(m.get("credits"), (int, float))
-                    and float(cat_cr) != float(m["credits"])):
+                    and float(cat_cr) != float(m["credits"])
+                    and (code, "credits") not in (cur.get("catalogue_overrides") or {})):
                 warnings.append(
                     f"{code}: programme file says {m['credits']} credits, "
-                    f"catalogue (ITS) says {cat_cr}. The authored value wins. "
-                    f"Expected for augmented foundation modules, where the ITS "
-                    f"subject credit is the registration load and the authored "
-                    f"value is the degree credit; anywhere else, check it.")
+                    f"catalogue (ITS) says {cat_cr}, and no catalogue_overrides "
+                    f"entry declares why. Either delete the credits line and let "
+                    f"the catalogue stand, or declare the override with a reason.")
         for f in ("year", "sem"):
             if not isinstance(m.get(f), int):
                 warnings.append(f"{code}: {f} should be an integer")
@@ -315,6 +401,14 @@ def validate_programme(cur: dict[str, Any]) -> dict[str, list[str]]:
             #     warnings.append(
             #         f"{code}: prereq names {ref}, not in this programme "
             #         f"(treated as never-passed \u2192 routes to review/blocked)")
+
+    for (code, field), ov in (cur.get("catalogue_overrides") or {}).items():
+        if code not in codes:
+            warnings.append(f"catalogue_overrides: {code}.{field} overrides a module "
+                            f"this programme does not carry")
+        elif not ov["reason"]:
+            errors.append(f"catalogue_overrides: {code}.{field} has no reason -- "
+                          f"an undocumented override is a second source of truth")
 
     cyc = _find_cycle(codes)
     if cyc:

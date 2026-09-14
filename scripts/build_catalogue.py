@@ -174,7 +174,12 @@ def main():
         code = r.get("Module")
         if not code:
             continue
-        facts.setdefault(code, {"name": r.get("ModuleName"), "credits": r.get("Subj Cred")})
+        # ITS names carry stray runs of spaces (ENCH160 has a double space before
+        # "Engineers"). Collapse them, or a programme file that spells the name
+        # correctly reads as a disagreement forever.
+        name = r.get("ModuleName")
+        facts.setdefault(code, {"name": " ".join(str(name).split()) if name else name,
+                                "credits": r.get("Subj Cred")})
 
     # scope: modules reachable from the Civil mainstream and augmented Civil curricula
     scope_rows = [r for r in groups if in_scope(r)]
