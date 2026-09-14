@@ -47,13 +47,26 @@ external_prereqs:
 # loader applies these, and catalogue_lint reports an undeclared disagreement as
 # an error rather than a shrug. Empty block = the programme agrees with ITS.
 catalogue_overrides:
-  # Year-long augmented foundation modules. ITS 'Subj Cred' is the registration
-  # load carried across both semesters; the degree credit the curriculum counts
-  # is half of it. — Justin Pringle 2026-08-25
-  - {code: MATH160, field: credits, value: 16, reason: "year-long; ITS 32 is registration load, 16 is degree credit"}
-  - {code: MATH161, field: credits, value: 16, reason: "year-long; ITS 32 is registration load, 16 is degree credit"}
-  - {code: PHYS160, field: credits, value: 16, reason: "year-long; ITS 32 is registration load, 16 is degree credit"}
-  - {code: PHYS163, field: credits, value: 16, reason: "year-long; ITS 32 is registration load, 16 is degree credit"}
+  # TWO KINDS OF CREDIT. Degree credit is what counts toward the 576 needed to
+  # graduate, and every ERS progression threshold is cumulative degree credit.
+  # Registration load is what ITS charges for the sitting (modules.yaml, the ITS
+  # 'Subj Cred' column). They agree everywhere except these four year-long
+  # augmented foundation modules, which run across both semesters: ITS records
+  # the full 32, the curriculum counts 16.
+  #
+  # Verified, not asserted: with 16 here the degree credits sum to exactly 576
+  # and track the rules.ers normal-load table above. With 32 they would not.
+  # Re-run the check any time this file changes:
+  #   python scripts/catalogue_lint.py programmes/augmented_civil.yaml --credits
+  #
+  # OPEN (Justin Pringle 2026-09-14): whether the 8-credit augmented modules
+  # (ENME160, ENCH160, ENAG160, ENAG161) also carry an unrecorded foundation
+  # component. ITS lists them at 8, not 16, so nothing here overrides them; the
+  # 576 total holds either way. Confirm against the handbook.
+  - {code: MATH160, field: credits, value: 16, reason: "year-long; ITS 32 is registration load across two semesters, 16 is degree credit"}
+  - {code: MATH161, field: credits, value: 16, reason: "year-long; ITS 32 is registration load across two semesters, 16 is degree credit"}
+  - {code: PHYS160, field: credits, value: 16, reason: "year-long; ITS 32 is registration load across two semesters, 16 is degree credit"}
+  - {code: PHYS163, field: credits, value: 16, reason: "year-long; ITS 32 is registration load across two semesters, 16 is degree credit"}
 
 equivalences:
   - {augmented: MATH160, mainstream: MATH131}   # Eng Mathematics 1A

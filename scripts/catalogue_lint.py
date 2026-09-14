@@ -7,12 +7,17 @@ modules.yaml, and the loader already fills it in. A restated fact is dead
 weight at best and a second source of truth at worst: the day ITS changes a
 credit value, the programme file quietly overrides it.
 
-    python catalogue_lint.py ../programmes/civil.yaml [--fix]
+    python catalogue_lint.py ../programmes/civil.yaml [--fix] [--credits]
 
 Without --fix it prints three lists: facts safely removable (they agree with
 the catalogue), facts that DISAGREE (never removed automatically -- an
 academic authored that override deliberately, or ITS is wrong), and codes the
 catalogue does not carry at all.
+
+--credits audits the other half of the same question: the degree credits this
+file awards, semester by semester, against the ERS normal-load table it carries
+in rules.ers.progression and against programme.total_credits. See the note at
+the head of credit_audit for the two kinds of credit and why they differ.
 
 --fix rewrites the file, deleting only the agreeing lines. Comments and layout
 elsewhere survive; the deleted lines are printed so the diff is reviewable.
@@ -141,11 +146,80 @@ def strip(programme_path: str, removable: list[tuple]) -> list[str]:
     return dropped
 
 
+def credit_audit(programme_path: str) -> int:
+    """Print degree credits per semester against the ERS normal-load table.
+
+    TWO KINDS OF CREDIT, and the whole augmented credit confusion is the two
+    being conflated:
+
+      degree credit       what the module contributes toward the 576 needed to
+                          graduate. Authored here. Every ERS progression
+                          threshold is cumulative degree credit.
+      registration load   what ITS charges the student for the sitting --
+                          catalogue/modules.yaml `credits`, straight from the
+                          ITS 'Subj Cred' column. Drives credit caps, not
+                          progression.
+
+    They agree for every module except the four year-long augmented foundation
+    modules (MATH160/161, PHYS160/163), where ITS records 32 against 16 degree
+    credits. catalogue_overrides declares that; this audit proves the 16 is
+    right by showing the degree credits still sum to 576 and still track the
+    normal-load table.
+    """
+    with open(programme_path, encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh) or {}
+    table = (((raw.get("rules") or {}).get("ers") or {}).get("progression") or {})
+    catalogue = load_catalogue()
+    overrides = {(str(o.get("code")), str(o.get("field"))): o.get("value")
+                 for o in (raw.get("catalogue_overrides") or []) if isinstance(o, dict)}
+
+    per: dict[tuple, float] = {}
+    seen: set[str] = set()
+    for m in raw.get("modules") or []:
+        code = str(m.get("code"))
+        group = m.get("choice")
+        if group:                      # one slot however many ways it can be taken
+            if group in seen:
+                continue
+            seen.add(group)
+        cr = m.get("credits")
+        if cr is None:
+            cr = overrides.get((code, "credits"))
+        if cr is None:
+            cr = (catalogue.get(code) or {}).get("credits")
+        per[(m.get("year"), m.get("sem"))] = per.get((m.get("year"), m.get("sem")), 0.0) + float(cr or 0)
+
+    print(f"{'sem':>3}  {'slot':<6} {'load':>5} {'cumulative':>11} {'ERS normal':>11}  note")
+    cum, n, bad = 0.0, 0, 0
+    for slot in sorted(per, key=lambda k: (k[0] or 0, k[1] or 0)):
+        n += 1
+        cum += per[slot]
+        want = (table.get(n) or [None, None, None])[1]
+        note = ""
+        if want is not None and float(want) != cum:
+            note, bad = f"differs from table by {cum - float(want):+.0f}", bad + 1
+        print(f"{n:>3}  Y{slot[0]}S{slot[1]:<4} {per[slot]:>5.0f} {cum:>11.0f} "
+              f"{str(want):>11}  {note}")
+
+    declared = (raw.get("programme") or {}).get("total_credits")
+    print(f"\ndegree credits awarded: {cum:.0f}"
+          + (f" (programme.total_credits says {declared})" if declared is not None else ""))
+    if declared is not None and float(declared) != cum:
+        print("  MISMATCH -- the module list and the declared total disagree")
+        bad += 1
+    if bad:
+        print(f"\n{bad} row(s) to explain. A per-semester difference with a correct "
+              f"grand total is a slot-mapping question, not a credit-value one.")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__)
         return 2
     path, fix = argv[0], "--fix" in argv
+    if "--credits" in argv:
+        return credit_audit(path)
     rep = audit(path, load_catalogue())
     print(f"{path}: {len(rep['same'])} restated facts, "
           f"{len(rep['differ'])} undeclared disagreements, "
