@@ -145,6 +145,84 @@ rules:
       13: [528, null, null]
       14: [576, null, null]
 
+  electives:              # degree elective rule (completion.py)
+    # Identical to mainstream Civil, pending sign-off (D7): same 48 elective
+    # credits, same approved list, same Level-4 8-credit School of Engineering
+    # requirement -- laid out one year later. ITS carries a narrower ENGEAP
+    # picture (groups ENCV5C/ENCV5D fix the two 8-credit slots to ENEL4EB and
+    # ENEL4EE and list no other-faculty group); confirm against the handbook
+    # before this goes student-facing.
+    min_other_credits: 24
+    required:
+      - {level: 4, credits: 8, school: EN, count: 1,
+         label: "Level-4 8-credit School of Engineering elective"}
+    options:
+      - ACCT103
+      - ANTH101
+      - ECHS101
+      - ECON101
+      - ENEL4EB
+      - ENEL4EE
+      - ENGL102
+      - FREN101
+      - HIST104
+      - HIST105
+      - INST102
+      - LAWS1AS
+      - LING101
+      - LING102
+      - POLS101
+      - POLS102
+      - PSYC102
+      - RELG101
+      - RELG106
+      - SPAN102
+      - ZULM101
+      - ZULM102
+      - ZULM105
+      - ZULM106
+      - ZULN101
+      - ZULN102
+
+  electives:              # degree elective rule (completion.py)
+    # Identical to mainstream Civil, pending sign-off (D7): same 48 elective
+    # credits, same approved list, same Level-4 8-credit School of Engineering
+    # requirement -- laid out one year later. ITS carries a narrower ENGEAP
+    # picture (groups ENCV5C/ENCV5D fix the two 8-credit slots to ENEL4EB and
+    # ENEL4EE and list no other-faculty elective group); confirm against the
+    # handbook before this goes student-facing.
+    min_other_credits: 24
+    required:
+      - {level: 4, credits: 8, school: EN, count: 1,
+         label: "Level-4 8-credit School of Engineering elective"}
+    options:
+      - ACCT103
+      - ANTH101
+      - ECHS101
+      - ECON101
+      - ENEL4EB
+      - ENEL4EE
+      - ENGL102
+      - FREN101
+      - HIST104
+      - HIST105
+      - INST102
+      - LAWS1AS
+      - LING101
+      - LING102
+      - POLS101
+      - POLS102
+      - PSYC102
+      - RELG101
+      - RELG106
+      - SPAN102
+      - ZULM101
+      - ZULM102
+      - ZULM105
+      - ZULM106
+      - ZULN101
+      - ZULN102
+
 modules:
 
   # ===================================================================

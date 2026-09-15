@@ -104,6 +104,39 @@ rules:
     required:
       - {level: 4, credits: 8, school: EN, count: 1,
          label: "Level-4 8-credit School of Engineering elective"}
+    # The approved elective list, as data. Sourced from the ITS group setups for
+    # ENG-CV (ELEC21, ELEC32, FAC1EL, FAC2EL) in the August 2026 extract, taken as
+    # one list rather than four: the explorer narrows it per slot by credits and
+    # by the semester the module is offered in, so the student sees only what they
+    # may actually take in that slot. Module facts (name, credits, level, blocks)
+    # are NOT repeated here -- they come from catalogue/modules.yaml.
+    options:
+      - ACCT103
+      - ANTH101
+      - ECHS101
+      - ECON101
+      - ENEL4EB
+      - ENEL4EE
+      - ENGL102
+      - FREN101
+      - HIST104
+      - HIST105
+      - INST102
+      - LAWS1AS
+      - LING101
+      - LING102
+      - POLS101
+      - POLS102
+      - PSYC102
+      - RELG101
+      - RELG106
+      - SPAN102
+      - ZULM101
+      - ZULM102
+      - ZULM105
+      - ZULM106
+      - ZULN101
+      - ZULN102
 
 modules:
 
