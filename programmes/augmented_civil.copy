@@ -41,47 +41,6 @@ regulation_years: 5
 external_prereqs:
   - PHYS110
 # Augmented <-> mainstream twins (handbook equivalence table). Data only.
-# Declared divergences from catalogue/modules.yaml. The catalogue is ITS ground
-# truth and normally wins; where this programme must value a module differently,
-# say so HERE with a reason rather than restating the field on the module. The
-# loader applies these, and catalogue_lint reports an undeclared disagreement as
-# an error rather than a shrug. Empty block = the programme agrees with ITS.
-# Degree credits per year of study, AS PRINTED IN THE HANDBOOK. This is the
-# arithmetic the module list below must satisfy; catalogue_lint --credits checks
-# it and the loader warns when the list drifts. Y1 and Y2 are printed module by
-# module in the handbook and agree with the list below. Y3-Y5 are printed as
-# year totals only, so this block is the only record of them.
-#   64 + 112 + 128 + 128 + 144 = 576
-year_credits: {1: 64, 2: 112, 3: 128, 4: 128, 5: 144}
-# Nine of the ten semesters also land on the rules.ers normal-load table below.
-# The exception is Year 3: 56/72 against the template's 64/64. Civil's Level 2 is
-# not eight 16cr modules -- ENCV2MT (8) sits in S1 and ENCV2FL (8) in S2, and
-# ENCV2FL cannot move because it gates ENCV3FA. The year total is right; the
-# split is the same generic-template deviation the handbook shows at Level 4 S2,
-# where Civil runs 2x24 + 3x8 rather than 2x16 + 2x8 + 1x32.
-
-catalogue_overrides:
-  # TWO KINDS OF CREDIT. Degree credit is what counts toward the 576 needed to
-  # graduate, and every ERS progression threshold is cumulative degree credit.
-  # Registration load is what ITS charges for the sitting (modules.yaml, the ITS
-  # 'Subj Cred' column). They agree everywhere except these four year-long
-  # augmented foundation modules, which run across both semesters: ITS records
-  # the full 32, the curriculum counts 16.
-  #
-  # Verified, not asserted: with 16 here the degree credits sum to exactly 576
-  # and track the rules.ers normal-load table above. With 32 they would not.
-  # Re-run the check any time this file changes:
-  #   python scripts/catalogue_lint.py programmes/augmented_civil.yaml --credits
-  #
-  # OPEN (Justin Pringle 2026-09-14): whether the 8-credit augmented modules
-  # (ENME160, ENCH160, ENAG160, ENAG161) also carry an unrecorded foundation
-  # component. ITS lists them at 8, not 16, so nothing here overrides them; the
-  # 576 total holds either way. Confirm against the handbook.
-  - {code: MATH160, field: credits, value: 16, reason: "year-long; ITS 32 is registration load across two semesters, 16 is degree credit"}
-  - {code: MATH161, field: credits, value: 16, reason: "year-long; ITS 32 is registration load across two semesters, 16 is degree credit"}
-  - {code: PHYS160, field: credits, value: 16, reason: "year-long; ITS 32 is registration load across two semesters, 16 is degree credit"}
-  - {code: PHYS163, field: credits, value: 16, reason: "year-long; ITS 32 is registration load across two semesters, 16 is degree credit"}
-
 equivalences:
   - {augmented: MATH160, mainstream: MATH131}   # Eng Mathematics 1A
   - {augmented: MATH161, mainstream: MATH141}   # Eng Mathematics 1B
@@ -145,84 +104,6 @@ rules:
       13: [528, null, null]
       14: [576, null, null]
 
-  electives:              # degree elective rule (completion.py)
-    # Identical to mainstream Civil, pending sign-off (D7): same 48 elective
-    # credits, same approved list, same Level-4 8-credit School of Engineering
-    # requirement -- laid out one year later. ITS carries a narrower ENGEAP
-    # picture (groups ENCV5C/ENCV5D fix the two 8-credit slots to ENEL4EB and
-    # ENEL4EE and list no other-faculty group); confirm against the handbook
-    # before this goes student-facing.
-    min_other_credits: 24
-    required:
-      - {level: 4, credits: 8, school: EN, count: 1,
-         label: "Level-4 8-credit School of Engineering elective"}
-    options:
-      - ACCT103
-      - ANTH101
-      - ECHS101
-      - ECON101
-      - ENEL4EB
-      - ENEL4EE
-      - ENGL102
-      - FREN101
-      - HIST104
-      - HIST105
-      - INST102
-      - LAWS1AS
-      - LING101
-      - LING102
-      - POLS101
-      - POLS102
-      - PSYC102
-      - RELG101
-      - RELG106
-      - SPAN102
-      - ZULM101
-      - ZULM102
-      - ZULM105
-      - ZULM106
-      - ZULN101
-      - ZULN102
-
-  electives:              # degree elective rule (completion.py)
-    # Identical to mainstream Civil, pending sign-off (D7): same 48 elective
-    # credits, same approved list, same Level-4 8-credit School of Engineering
-    # requirement -- laid out one year later. ITS carries a narrower ENGEAP
-    # picture (groups ENCV5C/ENCV5D fix the two 8-credit slots to ENEL4EB and
-    # ENEL4EE and list no other-faculty elective group); confirm against the
-    # handbook before this goes student-facing.
-    min_other_credits: 24
-    required:
-      - {level: 4, credits: 8, school: EN, count: 1,
-         label: "Level-4 8-credit School of Engineering elective"}
-    options:
-      - ACCT103
-      - ANTH101
-      - ECHS101
-      - ECON101
-      - ENEL4EB
-      - ENEL4EE
-      - ENGL102
-      - FREN101
-      - HIST104
-      - HIST105
-      - INST102
-      - LAWS1AS
-      - LING101
-      - LING102
-      - POLS101
-      - POLS102
-      - PSYC102
-      - RELG101
-      - RELG106
-      - SPAN102
-      - ZULM101
-      - ZULM102
-      - ZULM105
-      - ZULM106
-      - ZULN101
-      - ZULN102
-
 modules:
 
   # ===================================================================
@@ -230,15 +111,17 @@ modules:
   # ===================================================================
 
   # ---- Year 1, Semester 1 ------------------------------------------------
-  - {code: ENME160, year: 1, sem: 1}
-  - {code: ENCH160, year: 1, sem: 1}
+  - {code: ENME160, name: "Augmented Engineering Drawing", credits: 8, year: 1, sem: 1}
+  - {code: ENCH160, name: "Augmented Technical Communication for Engineers", credits: 8, year: 1, sem: 1}
 
   # ---- Year 1, Semester 2 ------------------------------------------------
   # MATH160/PHYS160 are year-long; the sheet realises their credit in Semester 2.
-  - {code: MATH160, year: 1, sem: 2, year_long: true}
-  - {code: PHYS160, year: 1, sem: 2, year_long: true}
-  - {code: ENAG161, year: 1, sem: 2}
+  - {code: MATH160, name: "Augmented Engineering Mathematics 1A", credits: 16, year: 1, sem: 2, year_long: true}
+  - {code: PHYS160, name: "Augmented Engineering Physics 1A", credits: 16, year: 1, sem: 2, year_long: true}
+  - {code: ENAG161, name: "Augmented Engineering Materials", credits: 8, year: 1, sem: 2}
   - code: ENAG160
+    name: "Augmented Engineering Design 1"
+    credits: 8
     year: 1
     sem: 2
     prereqs: [*TW_DRAW]          # mainstream ENCV1ED needs Drawing; either twin
@@ -248,13 +131,15 @@ modules:
   # ===================================================================
 
   # ---- Year 2, Semester 1 ------------------------------------------------
-  - {code: MATH132, year: 2, sem: 1}
-  - {code: CHEM181, year: 2, sem: 1}
+  - {code: MATH132, name: "Applied Mathematics 1A (Eng)", credits: 16, year: 2, sem: 1}
+  - {code: CHEM181, name: "Chemistry for Engineers 1A", credits: 8, year: 2, sem: 1}
   # Handbook: "Level 2 Programme Specific Module" (16 cr) — a pull-forward of the
   # Level-2 Surveying module (ENSV2SE) into augmented Year 2. Named from the
   # cohort: 96 of 153 augmented students sat ENSV2SE in this slot. Removed from
   # Year 3 to avoid double-listing (see A1c). — Justin Pringle 2026-08-25
   - code: ENSV2SE
+    name: "Surveying Engineering"
+    credits: 16
     year: 2
     sem: 1
     prereqs:
@@ -263,18 +148,24 @@ modules:
 
   # ---- Year 2, Semester 2 ------------------------------------------------
   - code: MATH161
+    name: "Augmented Engineering Mathematics 1B"
+    credits: 16
     year: 2
     sem: 2
     year_long: true
     prereqs:                     # Maths 1A carry (>=40), either twin
       - {any: [{code: MATH160, min_mark: 40}, {code: MATH131, min_mark: 40}]}
   - code: PHYS163
+    name: "Augmented Engineering Physics 1B"
+    credits: 16
     year: 2
     sem: 2
     year_long: true
     prereqs:                     # Physics 1A carry (>=40), either twin
       - {any: [{code: PHYS160, min_mark: 40}, {code: PHYS151, min_mark: 40}]}
   - code: MATH142
+    name: "Applied Mathematics 1B (Eng)"
+    credits: 16
     year: 2
     sem: 2
     prereqs:                     # mainstream: MATH131 + MATH132 carry
@@ -282,6 +173,8 @@ modules:
               {code: MATH131, min_mark: 40}]}
       - {code: MATH132, min_mark: 40}
   - code: CHEM191
+    name: "Chemistry for Engineers 1B"
+    credits: 8
     year: 2
     sem: 2
     prereqs:
@@ -299,61 +192,69 @@ modules:
 
   # ---- Sem 1 -------------------------------------------------------------
   - code: ENCV2MT
+    name: "Civil Engineering Materials"
+    credits: 8
     year: 3
     sem: 1
     prereqs: [*TW_MAT]                 # was ENME1EM
   - code: ENCV2SA
+    name: "Structures 1"
+    credits: 16
     year: 3
     sem: 1
     prereqs: [*TW_M1B, MATH142]        # was MATH141, MATH142
   # ENSV2SE (Surveying) is pulled forward to Year 2 Sem 1 (A1c) — not repeated here.
   - code: MATH238
+    name: "Mathematics 2A (Eng)"
+    credits: 16
     year: 3
     sem: 1
     prereqs: 
       - {any: [{code: MATH160, min_mark: 50}, {code: MATH131, min_mark: 50}]}
       - {any: [{code: MATH161, min_mark: 40}, {code: MATH141, min_mark: 40}]} #[*TW_M1A, *TW_M1B]        # was MATH131, MATH141
-  # Handbook: Level 2 year carries 8 x 16cr programme-specific modules. Civil's
-  # own Level 2 supplies only 112 of those credits once ENSV2SE moves to Year 2
-  # (A1c), so one 16cr Level 3 module is pulled forward. ENCV3TT is the only
-  # candidate: ENCV3G1, the other 16cr Level 3 module with no Level 3 prereq,
-  # needs 32cr at Level 2 and a Year 3 augmented student has 16.
-  # DECISION A1d (J. Pringle 2026-09-14): ENCV3TT sits in augmented Y3S1.
-  - code: ENCV3TT
-    year: 3
-    sem: 1
-    prereqs:
-      - {min_year: 3}            # pulled forward; mainstream reads "3rd yr of study"
+  - {code: "ELECTIVE_Y3S1", name: "Elective", credits: 16, year: 3, sem: 1, type: elective}
   
   
 
   # ---- Sem 2 -------------------------------------------------------------
   - code: ENCV2FL
+    name: "Fluids 1"
+    credits: 8
     year: 3
     sem: 2
     prereqs:
       - MATH142
       - {any: [PHYS160, PHYS151, PHYS110]}   # Physics 1A twin, or PHYS110
   - code: ENCV2MW
+    name: "Materials Workshop"
+    credits: 0
     year: 3
     sem: 2
     is_dp: true
     prereqs: [ENCV2MT]
   - code: ENCV2SB
+    name: "Structures 2"
+    credits: 16
     year: 3
     sem: 2
     prereqs: [ENCV2SA]
   - code: ENCV2SD
+    name: "Structural Design 1"
+    credits: 16
     year: 3
     sem: 2
     prereqs: [ENCV2SA]
   - code: GEOL215
+    name: "Elements of Geology for Civil Engineering"
+    credits: 16
     year: 3
     sem: 2
     prereqs:
       - {min_credits: 62, level: 1}
       - {min_sem: 2}
   - code: MATH248
+    name: "Mathematics 2B (Eng)"
+    credits: 16
     year: 3
     sem: 2
     prereqs: [MATH238, *TW_M1B]         # was MATH238, MATH141
@@ -364,54 +265,81 @@ modules:
 
   # ---- Sem 1 -------------------------------------------------------------
   - code: ENCV3FA
+    name: "Fluids 2"
+    credits: 16
     year: 4
     sem: 1
     prereqs: [ENCV2FL]
   - code: ENCV3G1
+    name: "Geotechnical Engineering Studies 1"
+    credits: 16
     year: 4
     sem: 1
     prereqs:
       - {min_credits: 144, level: 1}
       - {min_credits: 32, level: 2}
   - code: ENCV3ST
+    name: "Structures 3"
+    credits: 16
     year: 4
     sem: 1
     prereqs: [ENCV2SA, ENCV2SB]
 
+  - code: ENCV3TT
+    name: "Transport 1"
+    credits: 16
+    year: 4
+    sem: 1
+    prereqs:
+      - {min_year: 4}
+                # sheet: "Must be in 3rd yr of study"
 
   - code: STAT370
+    name: "Engineering Statistics"
+    credits: 8
     year: 4
     sem: 1
     prereqs: [MATH248]
-  - {code: "ELECTIVE_Y4S1", name: "Elective", credits: 8, year: 4, sem: 1, type: elective}
 
   # ---- Sem 2 -------------------------------------------------------------
   - code: ENCV3CW
+    name: "Civil CADD Workshop"
+    credits: 0
     year: 4
     sem: 2
     is_dp: true
     prereqs: [ENCV3ST, ENCV2SD]
   - code: ENCV3FB
+    name: "Fluids 3"
+    credits: 16
     year: 4
     sem: 2
     prereqs: [ENCV2FL, STAT370]
   - code: ENCV3G2
+    name: "Geotechnical Engineering Studies 2"
+    credits: 16
     year: 4
     sem: 2
     prereqs: [ENCV3G1]
   - code: ENCV3SD
+    name: "Structural Design 2"
+    credits: 16
     year: 4
     sem: 2
     prereqs: [ENCV2SD, ENCV3ST]
   - code: ENCV3TP
+    name: "Transport 2"
+    credits: 8
     year: 4
     sem: 2
     prereqs: [ENCV3G1, ENCV3TT, GEOL215]
   - code: ENCV3MS
+    name: "Mathematical Systems"
+    credits: 8
     year: 4
     sem: 2
     prereqs: [MATH238, MATH248, STAT370]
-
+  - {code: "ELECTIVE_Y4S2", name: "Elective", credits: 8, year: 4, sem: 2, type: elective}
 
   # ===================================================================
   # LEVEL 4 — AUGMENTED YEAR 5  (mainstream Level 4, year hint +1)
@@ -419,24 +347,34 @@ modules:
 
   # ---- Sem 1 -------------------------------------------------------------
   - code: ENCH4ML
+    name: "Engineering Management & Labour Relations"
+    credits: 8
     year: 5
     sem: 1
     prereqs:
       - {min_credits: 144, level: 1}
       - {min_credits: 96, level: 2}
   - code: ENCV4GS
+    name: "Ground and Structural Engineering"
+    credits: 16
     year: 5
     sem: 1
     prereqs: [ENCV3G1, ENCV3G2, ENCV3SD, ENCV3ST]
   - code: ENCV4TE
+    name: "Transport & Environmental Management"
+    credits: 16
     year: 5
     sem: 1
     prereqs: [ENCV3TT]
   - code: ENCV4WE
+    name: "Water & Environmental Engineering"
+    credits: 16
     year: 5
     sem: 1
     prereqs: [ENCV2FL, ENCV3FA, ENCV3FB]
   - code: ENPD7PP
+    name: "Professional Practice"
+    credits: 8
     year: 5
     sem: 1
     prereqs:
@@ -445,22 +383,62 @@ modules:
 
   # ---- Sem 2 -------------------------------------------------------------
   - code: ENCV4DE
+    name: "Civil Engineering Design Project"
+    credits: 24
     year: 5
     sem: 2
-    # "Passed all preceding core modules." Derived by the loader from the module
-    # list below. First-year cores need no twin spelling out here: the engine
-    # aliases an equivalent pair into the passed set when it indexes the
-    # transcript, so a mainstream twin satisfies the augmented code.
+    # "Passed all preceding core modules." First-year cores accept either twin.
     prereqs:
-      - {preceding_core: true}
+      - all: &all_core_aug
+          - *TW_DRAW
+          - *TW_TC
+          - *TW_M1A
+          - *TW_P1A
+          - *TW_MAT
+          - *TW_DES
+          - *TW_M1B
+          - *TW_P1B
+          - MATH132
+          - MATH142
+          - CHEM181
+          - CHEM191
+          - ENCV2MT
+          - ENCV2SA
+          - ENSV2SE
+          - MATH238
+          - ENCV2FL
+          - ENCV2MW
+          - ENCV2SB
+          - ENCV2SD
+          - GEOL215
+          - MATH248
+          - ENCV3FA
+          - ENCV3G1
+          - ENCV3ST
+          - ENCV3TT
+          - STAT370
+          - ENCV3CW
+          - ENCV3FB
+          - ENCV3G2
+          - ENCV3SD
+          - ENCV3TP
+          - ENCV3MS
+          - ENCH4ML
+          - ENCV4GS
+          - ENCV4TE
+          - ENCV4WE
+          - ENPD7PP
   - code: ENCV4DS
+    name: "Dissertation"
+    credits: 24
     year: 5
     sem: 2
     prereqs:
-      - {preceding_core: true}   # same gate as ENCV4DE
-  - {code: ENCV4VW, year: 5, sem: 2, is_dp: true}
-  - {code: "ELECTIVE_Y5S2", name: "Elective", credits: 16, year: 5, sem: 2, type: elective}
+      - all: *all_core_aug
+  - {code: ENCV4VW, name: "Practical Vacation Work", credits: 0, year: 5, sem: 2, is_dp: true}
   - code: ENPD7CL
+    name: "Management of Construction Contracts"
+    credits: 8
     year: 5
     sem: 2
     prereqs:
