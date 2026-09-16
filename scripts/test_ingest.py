@@ -44,6 +44,51 @@ def test_parser_captures_decisions() -> None:
     assert {"RISK", "PROB", "XNFA"} <= codes, f"expected standing codes missing: {codes}"
 
 
+# A synthetic record in the ERS layout: invented student number, no real data.
+# It carries one period, one decision in the summary table, and a colour block
+# whose first line is labelled and whose remaining lines are bare.
+COLOUR_FIXTURE = """
+ 999000111 Testcase, Sample ENCV
+ Year Block Subject Credits Mark Result
+ 2026 1 ENG-CV : Bachelor of Science in Engineering (Civil Engineering) Full Time
+ ENCV4GS Ground and Structural Engineering HA 16 50 P Pass
+ Total Credits Earned For 2026 Block 1 : --> 16 WAV : 50%
+ Term Decision Summary
+ ---------------------
+ 2025 2 ENG-CV 15-DEC-2025 RISK : Performance unsatisfactory,academic counselling required
+ Colour Codes :   2025:1   Green (Good Academic Standing)
+                  2025:2   Orange (At Risk)
+                  2026:1   Green (Good Academic Standing)
+"""
+
+
+def test_colour_block_is_captured() -> None:
+    """The colour block is the only place a good period is stated. Without it a
+    green student is indistinguishable from one we failed to read."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "fixture.txt"
+        src.write_text(COLOUR_FIXTURE, encoding="utf-8")
+        rec = parse_file(str(src), "ENG-CIVIL")
+
+        colours = {(c["calendar_year"], c["semester"]): c["colour"] for c in rec["colours"]}
+        assert colours == {(2025, 1): "green", (2025, 2): "orange", (2026, 1): "green"}, colours
+        # The labelled first line and the bare ones that follow all land.
+        assert len(rec["colours"]) == 3
+
+        # Orange in the colour block, RISK in the summary: the two agree, which is
+        # the free integrity check keeping the records apart buys us.
+        assert [d["term_code"] for d in rec["decisions"]] == ["RISK"]
+
+        db = Store(str(Path(tmp) / "t.db"))
+        db.register_programme("ENG-CIVIL", "Civil", "")
+        assert db.ingest(rec)["n_colours"] == 3
+        assert db.ingest(rec)["n_colours"] == 3          # idempotent
+        got = db.colour_codes("ENG-CIVIL")["999000111"]
+        assert got["2026:1"]["colour"] == "green"
+        assert got["2025:2"]["text"] == "At Risk"
+        db.close()
+
+
 def test_plan_code_not_misstamped() -> None:
     """Cross-registered periods carry their own plan code, not the last one seen."""
     rec = parse_file(str(CIVIL_ERS), "ENG-CIVIL")

@@ -1,8 +1,10 @@
 """
-standing_codes.py -- registrar term code -> shared standing.
+standing_codes.py -- the registrar's vocabulary -> shared standing.
 
 The one canonical map from a registrar term code (RISK, PROB, RAPB, ...) to a
-standing (green / orange / red / exclude). Both the badge path
+standing (green / orange / red / exclude), and beside it the colour words the
+ERS colour block uses. Both vocabularies live here so there is one place to look
+up what a registrar word means. Both the badge path
 (datasource_sqlite) and the checker (ers_check) import it, so the two can never
 drift -- the drift between two hand-kept copies was the bug this replaces.
 
@@ -51,6 +53,27 @@ DEFAULT_STATUS_OF_CODE: dict[str, str] = {
 }
 
 EXCLUDE_CODES = {"XNFA", "XACA", "XAC"}
+
+# The other half of the registrar's vocabulary. The ERS colour block states a
+# standing in words rather than a code -- "Green (Good Academic Standing)",
+# "Orange (At Risk)" -- and it is the only place a good period is stated at all,
+# since a code is written only when something needs saying. Same fail-safe rule:
+# a word in neither map resolves to REVIEW.
+DEFAULT_STATUS_OF_COLOUR: dict[str, str] = {
+    "GREEN": "green", "ORANGE": "orange", "RED": "red",
+}
+
+
+def status_of_colour(colour: str, policy: dict[str, Any] | None = None) -> str:
+    """Standing for a colour word from the ERS colour block. A programme may
+    override under rules.ers.status_of_colour; an unknown word is REVIEW."""
+    colour = (colour or "").strip().upper()
+    if not colour:
+        return REVIEW
+    override = ((policy or {}).get("status_of_colour")) or {}
+    if colour in override:
+        return str(override[colour]).strip().lower()
+    return DEFAULT_STATUS_OF_COLOUR.get(colour, REVIEW)
 
 
 def status_of(code: str, policy: dict[str, Any] | None = None) -> str:

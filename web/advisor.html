@@ -179,7 +179,7 @@
     <h2 style="margin:0 0 10px">Ingest an ERS export</h2>
     <p style="font-size:13px;color:var(--muted);margin:0 0 12px">
       Pick a programme, choose whether this is the initial run or the final capture,
-      and select the file. A <b>final</b> ERS is stored as the record; an
+      and select the files. A <b>final</b> ERS is stored as the record; an
       <b>initial</b> ERS is kept only so you can check it, never written to the record.</p>
     <label>Programme<br><select id="u-prog" onchange="onUploadProg()" style="width:100%"></select></label><br><br>
     <div id="u-manual" style="display:none">
@@ -191,7 +191,10 @@
       <option value="final">Final — captured record (stored)</option>
       <option value="initial">Initial — raw ERS run (check only, not stored)</option>
     </select></label><br><br>
-    <label>ERS file (PDF, text, or CSV)<br><input id="u-file" type="file"></label><br><br>
+    <label>ERS files (PDF, text, or CSV)<br><input id="u-file" type="file" multiple></label>
+    <div style="font-size:12px;color:var(--muted);margin:4px 0 0">
+      Several files can be selected. They are read one after another, all into the
+      programme and run chosen above.</div><br>
     <div id="u-msg" style="font-size:13px;min-height:18px"></div>
     <div style="text-align:right">
       <button class="modebtn" onclick="document.getElementById('upl').close()">Cancel</button>
@@ -308,27 +311,45 @@ function onUploadProg(){
   if(manual && !$("#u-code").value) $("#u-code").value=PROGRAMME||"";
 }
 async function doUpload(){
-  const f=$("#u-file").files[0], manual=$("#u-prog").value==="__manual__";
+  const files=[...$("#u-file").files], manual=$("#u-prog").value==="__manual__";
   const code=manual?$("#u-code").value.trim():$("#u-prog").value;
   const kind=$("#u-kind").value;
-  if(!code||!f){ $("#u-msg").textContent="A programme and a file are required."; return; }
-  const fd=new FormData();
-  fd.append("programme",code); fd.append("kind",kind); fd.append("file",f);
-  if(manual){ fd.append("name",$("#u-name").value.trim()); fd.append("yaml",$("#u-yaml").value.trim()); }
-  $("#u-go").disabled=true; $("#u-msg").textContent="Reading "+f.name+"\u2026";
-  try{
-    const r=await (await fetch("/api/ingest",{method:"POST",body:fd})).json();
-    if(r.error){ $("#u-msg").textContent="Failed: "+r.error; }
-    else if(r.kind==="initial"){
-      $("#u-msg").textContent=`Initial ERS stored for checking (${r.n_results} results, ${r.n_decisions} decisions, ${r.n_students} students). Not written to the record.`;
-      await boot(); PROGRAMME=code; $("#progpick").value=code; await loadStudents(); await loadCycles(); renderSide();
-      setTimeout(()=>$("#upl").close(),1400);
-    }else{
-      $("#u-msg").textContent=`Captured ${r.n_results} results, ${r.n_decisions} decisions for ${r.n_students} students.`;
-      await boot(); PROGRAMME=code; $("#progpick").value=code; await loadStudents(); await loadCycles(); renderSide();
-      setTimeout(()=>$("#upl").close(),900);
-    }
-  }catch(e){ $("#u-msg").textContent="Failed: "+e; }
+  if(!code||!files.length){ $("#u-msg").textContent="A programme and at least one file are required."; return; }
+  $("#u-go").disabled=true;
+  /* One request per file, in order. The store serialises writes anyway, and a
+     bad file should not take the others down with it -- each is reported on its
+     own line and the run carries on. */
+  const done=[], failed=[]; let results=0, decisions=0, colours=0;
+  const say=extra=>{ $("#u-msg").innerHTML=
+    done.map(l=>esc(l)).concat(failed.map(l=>'<b>'+esc(l)+'</b>'))
+        .concat(extra?[esc(extra)]:[]).join("<br>"); };
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    say(`Reading ${f.name} (${i+1} of ${files.length})\u2026`);
+    const fd=new FormData();
+    fd.append("programme",code); fd.append("kind",kind); fd.append("file",f);
+    if(manual){ fd.append("name",$("#u-name").value.trim()); fd.append("yaml",$("#u-yaml").value.trim()); }
+    try{
+      const r=await (await fetch("/api/ingest",{method:"POST",body:fd})).json();
+      if(r.error){ failed.push(`${f.name}: ${r.error}`); }
+      else{
+        results+=r.n_results||0; decisions+=r.n_decisions||0; colours+=r.n_colours||0;
+        done.push(`${f.name}: ${r.n_results} results, ${r.n_decisions} decisions,`
+                  +` ${r.n_colours||0} colours, ${r.n_students} students`);
+      }
+    }catch(e){ failed.push(`${f.name}: ${e}`); }
+    say();
+  }
+  /* Refresh once, at the end, rather than after every file. */
+  if(done.length){
+    const total=`${files.length>1?"All "+done.length+" files: ":""}`
+      +`${results} results, ${decisions} decisions, ${colours} colours`
+      +`${kind==="initial"?" (checked, not written to the record)":" captured"}.`;
+    say(total);
+    await boot(); PROGRAMME=code; $("#progpick").value=code;
+    await loadStudents(); await loadCycles(); renderSide();
+    if(!failed.length) setTimeout(()=>$("#upl").close(), files.length>1?2200:1200);
+  }
   $("#u-go").disabled=false;
 }
 

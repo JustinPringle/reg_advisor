@@ -16,6 +16,7 @@ Read side (used by the SQLite datasource):
     db.students("ENG-CIVIL")        -> bio rows for the picker
     db.results("ENG-CIVIL")         -> {student_number: [result rows]}
     db.latest_decisions("ENG-CIVIL")-> {student_number: {code, text, year, semester}}
+    db.colour_codes("ENG-CIVIL")    -> {student_number: {"2026:1": {colour, text}}}
 """
 from __future__ import annotations
 from typing import Any, Iterable
@@ -65,6 +66,20 @@ CREATE TABLE IF NOT EXISTS term_decisions (
     semester        INTEGER,
     term_code       TEXT,
     term_text       TEXT,
+    PRIMARY KEY (programme, student_number, calendar_year, semester)
+);
+-- The registrar's colour for one period: green, orange or red. Kept apart from
+-- term_decisions on purpose. A decision code is written only when something
+-- needs saying, so a period in good standing has none; the colour block states
+-- a standing for every period. Two records, two tables, and each checks the
+-- other -- 2023:2 orange here should sit beside 2023:2 RISK there.
+CREATE TABLE IF NOT EXISTS colour_codes (
+    programme       TEXT,
+    student_number  TEXT,
+    calendar_year   TEXT,
+    semester        INTEGER,
+    colour          TEXT,          -- 'green' | 'orange' | 'red'
+    colour_text     TEXT,          -- the registrar's wording, e.g. 'At Risk'
     PRIMARY KEY (programme, student_number, calendar_year, semester)
 );
 CREATE TABLE IF NOT EXISTS ingests (
@@ -129,7 +144,8 @@ class Store:
         count removed per table and the document file paths, which stay on disk for
         the caller to unlink or keep.
         """
-        data_tables = ("students", "results", "term_decisions", "ingests", "documents")
+        data_tables = ("students", "results", "term_decisions", "colour_codes",
+                       "ingests", "documents")
         with self._lock:
             files = [r["stored_path"] for r in self.db.execute(
                 "SELECT stored_path FROM documents WHERE programme=?", (code,)).fetchall()]
@@ -147,13 +163,17 @@ class Store:
         """Upsert one parsed ERS into the store. Idempotent per semester."""
         now = _now()
         prog = _programme_of(parsed)
+        # An older parse has no colours key; treat it as none rather than fail.
+        colours = parsed.get("colours") or []
         counts = {"n_students": len(parsed["students"]),
                   "n_results": len(parsed["results"]),
-                  "n_decisions": len(parsed["decisions"])}
+                  "n_decisions": len(parsed["decisions"]),
+                  "n_colours": len(colours)}
         with self._lock:
             self._upsert_students(parsed["students"], now)
             self._upsert_results(parsed["results"])
             self._upsert_decisions(parsed["decisions"])
+            self._upsert_colours(colours)
             self.db.execute(
                 "INSERT INTO ingests(programme, source, n_students, n_results, n_decisions, at)"
                 " VALUES(?,?,?,?,?,?)",
@@ -207,6 +227,16 @@ class Store:
             " term_code=excluded.term_code, term_text=excluded.term_text",
             [(r["programme"], str(r["student_number"]), str(r.get("calendar_year") or ""),
               _int(r.get("semester")), r.get("term_code"), r.get("term_text"))
+             for r in rows])
+
+    def _upsert_colours(self, rows: Iterable[dict]) -> None:
+        self.db.executemany(
+            "INSERT INTO colour_codes(programme, student_number, calendar_year, semester,"
+            " colour, colour_text) VALUES(?,?,?,?,?,?) "
+            "ON CONFLICT(programme, student_number, calendar_year, semester) DO UPDATE SET"
+            " colour=excluded.colour, colour_text=excluded.colour_text",
+            [(r["programme"], str(r["student_number"]), str(r.get("calendar_year") or ""),
+              _int(r.get("semester")), (r.get("colour") or "").lower(), r.get("colour_text"))
              for r in rows])
 
     # -- read ----------------------------------------------------------------
@@ -268,6 +298,25 @@ class Store:
                               "calendar_year": r["calendar_year"], "semester": r["semester"]}
         return latest
 
+    def colour_codes(self, programme: str) -> dict[str, dict[str, dict[str, Any]]]:
+        """Every colour on file, per student, keyed "year:semester".
+
+            {"222009802": {"2026:1": {"colour": "green", "text": "Good Academic
+             Standing"}, ...}}
+
+        This is the registrar saying a period was fine. Read it before treating a
+        student with no decision code as unknown.
+        """
+        rows = self.db.execute(
+            "SELECT student_number, calendar_year, semester, colour, colour_text"
+            " FROM colour_codes WHERE programme=?", (programme,)).fetchall()
+        out: dict[str, dict[str, dict[str, Any]]] = {}
+        for r in rows:
+            period = f"{r['calendar_year']}:{_int(r['semester']) or 0}"
+            out.setdefault(r["student_number"], {})[period] = {
+                "colour": (r["colour"] or "").lower(), "text": r["colour_text"] or ""}
+        return out
+
     # -- documents (initial vs final ERS PDFs) -------------------------------
     def add_document(self, programme: str, kind: str, filename: str,
                      stored_path: str) -> int:
@@ -320,7 +369,7 @@ def _int(v: Any) -> int | None:
 
 
 def _programme_of(parsed: dict[str, list[dict]]) -> str:
-    for key in ("students", "results", "decisions"):
+    for key in ("students", "results", "decisions", "colours"):
         if parsed.get(key):
             return parsed[key][0].get("programme", "")
     return ""
