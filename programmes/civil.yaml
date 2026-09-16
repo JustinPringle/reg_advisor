@@ -66,6 +66,20 @@ rules:
     min_gpa: 55          # credit-weighted average floor
     max_missing: 1       # requirements still short and eligible
     prereq_floor: 45     # must have scored ABOVE this in the failed prereq
+  # Finalist route (FIN-v1). Not a concession: no merit floor, no ceiling on
+  # how many modules remain. The only test is whether the degree can finish
+  # this year -- outstanding sem-2 modules co-register with the capstones, and
+  # outstanding sem-1 modules need a final mark in the band to be cleared at a
+  # later sitting. Coordinator-facing only; see build_explorer.py.
+  finalist:
+    enabled: true
+    applies_to: [ENCV4DE, ENCV4DS]
+    coregister_sem: 2
+    special_exam:
+      applies_to_sem: 1
+      band: [40, 49]
+      requires_attempted: true
+    rule_id: FIN-v1
   autoclear:             # the routine concessions the academic pre-authorises (D4)
     enabled: true
     min_wam: 55
@@ -73,13 +87,23 @@ rules:
     single_miss_only: true
     allowed_standings: [green, orange]   # never red / excluded
     rule_id: CAC-v1
-  credit_cap:            # ERS standing -> term credit cap (null = no cap)
+  # Probation load. 56 is a MINIMUM a red student must register, not a ceiling;
+  # no standing carries a cap. Under 56 with a completing registration is
+  # reduced on the coordinator's signature; under 56 without one is not blocked
+  # here -- it surfaces as a negative term decision at the end of the semester.
+  load:
+    probation_min: 56
+    probation_statuses: [red]
+    completion_reduces: true
+
+  # DEPRECATED. Every entry is null: green, orange and red are uncapped.
+  # Kept only so ers_credit_cap() has something to read until its callers move
+  # to rules.load. Delete with the function.
+  credit_cap:
     green: null
-    orange: 48
-    red: 32
+    orange: null
+    red: null
     exclude: 0
-    ERS-ORANGE-SEM: 56
-    ERS-RED-SECOND: 24
   ers:
       # Progression thresholds by semesters completed (robot_system_logic Section 3).
       # Absolute passed-credit lines the standing engine reads; academics own every

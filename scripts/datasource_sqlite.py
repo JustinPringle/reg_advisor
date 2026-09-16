@@ -229,16 +229,30 @@ class SqliteSource:
 
         def reroute(code: str) -> tuple[str, dict[str, Any] | None, str | None]:
             """A failed augmented L1 module is repeated in its mainstream twin --
-            the augmented section is not re-offered. Once the student has entered
-            the mainstream module (sat the twin), show that code, carrying the
-            best mark across the pair so the near-miss stays visible.
-            DECISION (Justin Pringle, 2026-08-26): route on twin-attempt evidence;
-            a student still in the augmented years keeps the augmented code."""
+            the augmented section is not re-offered. Show the mainstream code,
+            carrying the best mark across the pair so the near-miss stays visible.
+
+            DECISION (Justin Pringle, 2026-09-15): the handbook rule is that
+            failing an augmented module OBLIGES the student to take the
+            mainstream twin. Routing therefore fires on the failure itself, not
+            on evidence that the student has already sat the twin. This
+            supersedes the 2026-08-26 twin-attempt rule, which left a failed
+            student still showing an augmented code they cannot re-register.
+
+            Two cases deliberately do NOT route, to stay fail-safe:
+              - the augmented module has no recorded outcome yet (in progress,
+                or supplementary granted and not yet sat) -- not a fail;
+              - either twin has been passed -- nothing to repeat."""
             main = twins.get(code)
-            if not main or attempts.get(R.core_code(main, cl), 0) <= 0:
+            if not main:
                 return code, R._best(tx, code), None
             aug_b, main_b = R._best(tx, code), R._best(tx, main)
             if (aug_b and aug_b["passed"]) or (main_b and main_b["passed"]):
+                return code, R._best(tx, code), None
+            sat_twin = attempts.get(R.core_code(main, cl), 0) > 0
+            failed_aug = bool(aug_b) and aug_b.get("mark") is not None
+            if not (failed_aug or sat_twin):
+                # augmented module never sat, or sat with no result yet
                 return code, R._best(tx, code), None
             cands = [b for b in (aug_b, main_b) if b and b["mark"] is not None]
             best = max(cands, key=lambda b: b["mark"]) if cands else None

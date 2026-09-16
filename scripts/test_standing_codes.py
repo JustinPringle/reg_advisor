@@ -83,6 +83,34 @@ def test_roster_covers_the_cohort() -> None:
     print("ok test_roster_covers_the_cohort")
 
 
+_POL = {"progression": {1: [48, 72, 54], 2: [96, 144, 108]}}
+
+
+def test_orange_is_carried_until_cumulative_recovers() -> None:
+    """A light load passed in full looks perfect on pass-rate alone, but leaves
+    the student behind on credits. Trees B and C rehabilitate only once the
+    cumulative line (75% of normal) is cleared -- the bug behind the 48
+    'engine more lenient' mismatches."""
+    # Two semesters, everything registered passed, but only 96 credits of the
+    # 144 normal: at or above the 96 minimum, under the 108 three-quarter line.
+    behind = [_rows("1", "2025", "1", "MOD1", 40, 60, "P")[0],
+              _rows("1", "2025", "2", "MOD2", 56, 60, "P")[0]]
+    assert X.check_student(behind, "GREEN", None, _POL)["engine_status"] == "green"
+    assert X.check_student(behind, "RSK2", "RSK2", _POL)["engine_status"] == "orange"
+    assert X.check_student(behind, "PROB", "PROB", _POL)["engine_status"] == "orange"
+    # Back on the cumulative line, but this semester's load is short: 40 credits
+    # passed against 50.4 (70% of one 72-credit semester). Rehabilitation needs
+    # BOTH halves, so the orange stands.
+    light = [_rows("1", "2025", "1", "MOD1", 72, 60, "P")[0],
+             _rows("1", "2025", "2", "MOD2", 40, 60, "P")[0]]          # 112 cumulative
+    assert X.check_student(light, "GREEN", None, _POL)["engine_status"] == "green"
+    assert X.check_student(light, "RSK2", "RSK2", _POL)["engine_status"] == "orange"
+    # Clear both lines and the orange student is rehabilitated.
+    recovered = behind + [_rows("1", "2025", "2", "MOD3", 32, 60, "P")[0]]  # 128, load 88
+    assert X.check_student(recovered, "RSK2", "RSK2", _POL)["engine_status"] == "green"
+    print("ok test_orange_is_carried_until_cumulative_recovers")
+
+
 def main() -> None:
     test_status_is_failsafe()
     test_risu_is_orange()
@@ -90,6 +118,7 @@ def main() -> None:
     test_single_source_of_truth()
     test_check_student_verdicts()
     test_roster_covers_the_cohort()
+    test_orange_is_carried_until_cumulative_recovers()
     print("\nall standing-code tests pass")
 
 

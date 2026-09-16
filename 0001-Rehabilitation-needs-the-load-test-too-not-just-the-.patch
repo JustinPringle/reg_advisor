@@ -1,0 +1,120 @@
+From 70fd2c75dab76dcfcb43d1e85542a968b7d3e00e Mon Sep 17 00:00:00 2001
+From: Justin <j@ukzn>
+Date: Wed, 16 Sep 2026 13:09:47 +0000
+Subject: [PATCH] Rehabilitation needs the load test too, not just the
+ cumulative one
+
+Found on 225051132 (Zungu): 168 cumulative against a 162 three-quarter line, so
+the carry rule released him to green - but he passed 48 credits in 2026:1
+against 50.4 (70% of a 72-credit semester). Tree B rehabilitates on BOTH
+conditions; the patch tested only the cumulative half.
+
+The semester pass RATE already in the criteria is not the same test: he
+registered 48 credits and passed every one, so the rate reads 100% while the
+load is short. Adds normal_load_for() (the step between two rows of the
+cumulative normal-load column), semester.at_or_above_load, and
+history.rehabilitated as the two halves together, which ERS-ORANGE-CARRY now
+reads. A missing normal-load row resolves False, as the p75 half already does.
+
+ENG-CIVIL, August 2026 export: 4 mismatches -> 2.
+---
+ scripts/ers_engine.py          | 35 ++++++++++++++++++++++++++++++++--
+ scripts/test_standing_codes.py | 11 +++++++++--
+ 2 files changed, 42 insertions(+), 4 deletions(-)
+
+diff --git a/scripts/ers_engine.py b/scripts/ers_engine.py
+index 99b0820..d65ba53 100644
+--- a/scripts/ers_engine.py
++++ b/scripts/ers_engine.py
+@@ -55,6 +55,25 @@ def thresholds_for(semesters: int, policy: dict[str, Any] | None = None) -> dict
+     mn, nm, p75 = (list(row) + [None, None, None])[:3]
+     return {"sem": s, "min_prog": mn, "normal": nm, "p75": p75}
+ 
++def normal_load_for(semesters: int, policy: dict[str, Any] | None = None) -> float | None:
++    """The normal load for ONE semester: the step between two rows of the
++    cumulative normal-load column. None when the table stops carrying a normal
++    load (past the standard degree length) -- the caller decides what that means.
++    """
++    table = ((policy or {}).get("progression")) or {}
++    keys = sorted(int(k) for k in table)
++    if not keys:
++        return None
++    s_i = min(max(int(semesters or 0), keys[0]), keys[-1])
++    row = table.get(s_i, table.get(str(s_i)))
++    prev = table.get(s_i - 1, table.get(str(s_i - 1)))
++    this_norm = (list(row) + [None, None, None])[1] if row else None
++    prev_norm = (list(prev) + [None, None, None])[1] if prev else 0
++    if this_norm is None:
++        return None
++    return float(this_norm) - float(prev_norm or 0)
++
++
+ def build_criteria(policy: dict[str, Any]) -> list[dict[str, Any]]:
+     """The ERS decision list as data, thresholds injected from `policy`.
+ 
+@@ -99,7 +118,7 @@ def build_criteria(policy: dict[str, Any]) -> list[dict[str, Any]]:
+         {"code": "ERS-ORANGE-CARRY", "status": "orange",
+          "label": "At risk - carried forward, cumulative not yet recovered",
+          "rules": [("history.last_status", "eq", "orange"),
+-                   ("cumulative.at_or_above_p75", "eq", False),
++                   ("history.rehabilitated", "eq", False),
+                    ("history.below_minimum", "eq", False)]},
+         {"code": "ERS-ORANGE-FROMRED", "status": "orange",
+          "label": "At risk - returning from probation",
+@@ -267,6 +286,13 @@ def derive_metrics(results: list[dict[str, Any]],
+     _p75 = (_th or {}).get("p75")
+     at_or_above_p75 = _p75 is not None and cum_passed >= float(_p75)
+ 
++    # The other half of the rehabilitation test: credits passed this semester
++    # against 70% of ONE semester's normal load. Not the same thing as the
++    # semester pass RATE -- a student who registers 48 of 72 credits and passes
++    # every one reads 100% on rate and is still short on load.
++    _load = normal_load_for(len(main_periods), policy)
++    at_or_above_load = _load is not None and sem_passed >= policy["semester_good"] * _load
++
+     cum_pct = (cum_passed / cum_total) if cum_total else 0.0
+     sem_pct = (sem_passed / sem_total) if sem_total else 0.0
+ 
+@@ -276,11 +302,16 @@ def derive_metrics(results: list[dict[str, Any]],
+                        "credits_passed_to_date": cum_passed,
+                        "at_or_above_p75": at_or_above_p75},
+         "semester": {"credit_pct_passed": sem_pct, "credits_total": sem_total,
+-                     "credits_passed": sem_passed, "period": current or ""},
++                     "credits_passed": sem_passed, "period": current or "",
++                     "at_or_above_load": at_or_above_load},
+         "history": {"below_minimum": _below_minimum(cum_passed, cum_pct,
+                                                     len(main_periods), policy, min_pct),
+                     "semesters_registered": len(main_periods),
+                     "semesters_completed": len(main_periods),
++                    # Rehabilitated = both halves of the spec's tree-B test:
++                    # cumulative back on the 75% line AND a full load passed this
++                    # semester. Either half short and an orange standing stands.
++                    "rehabilitated": at_or_above_p75 and at_or_above_load,
+                     "last_status": history.get("last_status", "none"),
+                     "appeals_exhausted": bool(history.get("appeals_exhausted", False))},
+         "thresholds": thresholds_for(len(main_periods), policy),
+diff --git a/scripts/test_standing_codes.py b/scripts/test_standing_codes.py
+index 768fdbe..adc69a5 100644
+--- a/scripts/test_standing_codes.py
++++ b/scripts/test_standing_codes.py
+@@ -98,8 +98,15 @@ def test_orange_is_carried_until_cumulative_recovers() -> None:
+     assert X.check_student(behind, "GREEN", None, _POL)["engine_status"] == "green"
+     assert X.check_student(behind, "RSK2", "RSK2", _POL)["engine_status"] == "orange"
+     assert X.check_student(behind, "PROB", "PROB", _POL)["engine_status"] == "orange"
+-    # Clear the 108 line and the orange student is rehabilitated.
+-    recovered = behind + [_rows("1", "2025", "2", "MOD3", 16, 60, "P")[0]]
++    # Back on the cumulative line, but this semester's load is short: 40 credits
++    # passed against 50.4 (70% of one 72-credit semester). Rehabilitation needs
++    # BOTH halves, so the orange stands.
++    light = [_rows("1", "2025", "1", "MOD1", 72, 60, "P")[0],
++             _rows("1", "2025", "2", "MOD2", 40, 60, "P")[0]]          # 112 cumulative
++    assert X.check_student(light, "GREEN", None, _POL)["engine_status"] == "green"
++    assert X.check_student(light, "RSK2", "RSK2", _POL)["engine_status"] == "orange"
++    # Clear both lines and the orange student is rehabilitated.
++    recovered = behind + [_rows("1", "2025", "2", "MOD3", 32, 60, "P")[0]]  # 128, load 88
+     assert X.check_student(recovered, "RSK2", "RSK2", _POL)["engine_status"] == "green"
+     print("ok test_orange_is_carried_until_cumulative_recovers")
+ 
+-- 
+2.43.0
+

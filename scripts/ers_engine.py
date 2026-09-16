@@ -55,6 +55,25 @@ def thresholds_for(semesters: int, policy: dict[str, Any] | None = None) -> dict
     mn, nm, p75 = (list(row) + [None, None, None])[:3]
     return {"sem": s, "min_prog": mn, "normal": nm, "p75": p75}
 
+def normal_load_for(semesters: int, policy: dict[str, Any] | None = None) -> float | None:
+    """The normal load for ONE semester: the step between two rows of the
+    cumulative normal-load column. None when the table stops carrying a normal
+    load (past the standard degree length) -- the caller decides what that means.
+    """
+    table = ((policy or {}).get("progression")) or {}
+    keys = sorted(int(k) for k in table)
+    if not keys:
+        return None
+    s_i = min(max(int(semesters or 0), keys[0]), keys[-1])
+    row = table.get(s_i, table.get(str(s_i)))
+    prev = table.get(s_i - 1, table.get(str(s_i - 1)))
+    this_norm = (list(row) + [None, None, None])[1] if row else None
+    prev_norm = (list(prev) + [None, None, None])[1] if prev else 0
+    if this_norm is None:
+        return None
+    return float(this_norm) - float(prev_norm or 0)
+
+
 def build_criteria(policy: dict[str, Any]) -> list[dict[str, Any]]:
     """The ERS decision list as data, thresholds injected from `policy`.
 
@@ -90,6 +109,20 @@ def build_criteria(policy: dict[str, Any]) -> list[dict[str, Any]]:
          "label": f"At risk - current semester below {int(sem*100)}%",
          "rules": [("semester.credit_pct_passed", "lt", sem),
                    ("cumulative.credit_pct_passed", "gte", cum),
+                   ("history.below_minimum", "eq", False)]},
+        # Rehabilitation, not a fresh start. A student carrying an orange or red
+        # standing does not return to green on one good semester: the spec's
+        # trees B and C keep them there until the CUMULATIVE credit line is
+        # cleared (75% of normal load to date). Tree C has no green leaf at all,
+        # so a prior red resolves orange until a person moves it.
+        {"code": "ERS-ORANGE-CARRY", "status": "orange",
+         "label": "At risk - carried forward, cumulative not yet recovered",
+         "rules": [("history.last_status", "eq", "orange"),
+                   ("history.rehabilitated", "eq", False),
+                   ("history.below_minimum", "eq", False)]},
+        {"code": "ERS-ORANGE-FROMRED", "status": "orange",
+         "label": "At risk - returning from probation",
+         "rules": [("history.last_status", "eq", "red"),
                    ("history.below_minimum", "eq", False)]},
         {"code": "ERS-GREEN", "status": "green",
          "label": "Good academic standing",
@@ -244,19 +277,41 @@ def derive_metrics(results: list[dict[str, Any]],
     cum_total = sum(float(r.get("credits") or 0) for r in best.values())
     cum_passed = sum(float(r.get("credits") or 0) for r in best.values() if r.get("passed"))
 
+    # The 75%-of-normal cumulative line for this many completed semesters. The
+    # table stops carrying a normal load past the standard degree length, and a
+    # student that far out is behind by definition -- so a missing line means
+    # NOT rehabilitated, never rehabilitated-by-default. Only the carry-forward
+    # criteria read this, so it cannot hold a good-standing student back.
+    _th = thresholds_for(len(main_periods), policy)
+    _p75 = (_th or {}).get("p75")
+    at_or_above_p75 = _p75 is not None and cum_passed >= float(_p75)
+
+    # The other half of the rehabilitation test: credits passed this semester
+    # against 70% of ONE semester's normal load. Not the same thing as the
+    # semester pass RATE -- a student who registers 48 of 72 credits and passes
+    # every one reads 100% on rate and is still short on load.
+    _load = normal_load_for(len(main_periods), policy)
+    at_or_above_load = _load is not None and sem_passed >= policy["semester_good"] * _load
+
     cum_pct = (cum_passed / cum_total) if cum_total else 0.0
     sem_pct = (sem_passed / sem_total) if sem_total else 0.0
 
     return {
         "cumulative": {"credit_pct_passed": cum_pct,
                        "credits_expected_to_date": cum_total,
-                       "credits_passed_to_date": cum_passed},
+                       "credits_passed_to_date": cum_passed,
+                       "at_or_above_p75": at_or_above_p75},
         "semester": {"credit_pct_passed": sem_pct, "credits_total": sem_total,
-                     "credits_passed": sem_passed, "period": current or ""},
+                     "credits_passed": sem_passed, "period": current or "",
+                     "at_or_above_load": at_or_above_load},
         "history": {"below_minimum": _below_minimum(cum_passed, cum_pct,
                                                     len(main_periods), policy, min_pct),
                     "semesters_registered": len(main_periods),
                     "semesters_completed": len(main_periods),
+                    # Rehabilitated = both halves of the spec's tree-B test:
+                    # cumulative back on the 75% line AND a full load passed this
+                    # semester. Either half short and an orange standing stands.
+                    "rehabilitated": at_or_above_p75 and at_or_above_load,
                     "last_status": history.get("last_status", "none"),
                     "appeals_exhausted": bool(history.get("appeals_exhausted", False))},
         "thresholds": thresholds_for(len(main_periods), policy),

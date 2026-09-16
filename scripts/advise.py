@@ -62,6 +62,10 @@ def check_additions(cur: dict[str, Any], rows: list[dict[str, Any]],
             row_of[m["code"]] = (name, m)
     add_credits = sum(float(by_code[c]["credits"]) for c in codes if c in by_code)
     over_cap = cap is not None and add_credits > cap
+    # The live constraint is the probation MINIMUM, not a ceiling. It is a
+    # property of the whole basket, so it is reported once on the result rather
+    # than against any one module.
+    load = R.probation_load_check(cur, tx, set(codes), a["ers"]["status"], add_credits)
 
     out = []
     for code in codes:
@@ -81,6 +85,13 @@ def check_additions(cur: dict[str, Any], rows: list[dict[str, Any]],
                         "reason": f"prereqs met but term load {add_credits:.0f}cr exceeds {cap}cr cap ({a['ers']['code']})"})
         elif bucket == "can_register":
             out.append({"code": code, "verdict": "CLEARED", "reason": "prereqs met, within credit cap"})
+        elif bucket == "concession_possible" and (arow or {}).get("finalist"):
+            f = arow["finalist"]
+            later = ", ".join(f"{x['code']} ({x['mark']:.0f})" for x in f["later_sitting"])
+            out.append({"code": code, "verdict": "REVIEW", "reason": (
+                f"finalist route [{f['rule_id']}]: degree completes this year - "
+                f"co-register {', '.join(f['coregister']) or '-'}"
+                + (f"; later sitting {later}" if later else ""))})
         elif bucket == "concession_possible":
             ev = R.concession_evidence(cur, tx, code)
             out.append({"code": code, "verdict": "REVIEW",
@@ -91,7 +102,8 @@ def check_additions(cur: dict[str, Any], rows: list[dict[str, Any]],
         else:
             miss = ", ".join(arow["prereq_check"]["unmet"]) if arow else "prerequisites"
             out.append({"code": code, "verdict": "REVIEW", "reason": f"blocked - missing {miss}"})
-    return {"ers": a["ers"], "cap": cap, "add_credits": add_credits, "rows": out}
+    return {"ers": a["ers"], "cap": cap, "add_credits": add_credits,
+            "load": load, "rows": out}
 
 
 def sweep_programme(cur: dict[str, Any], results: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
@@ -114,7 +126,7 @@ def sweep_programme(cur: dict[str, Any], results: dict[str, list[dict[str, Any]]
 def format_report(sn: str, a: dict[str, Any]) -> str:
     tx, m, ers, cap, adv = a["tx"], a["metrics"], a["ers"], a["cap"], a["advice"]
     L = [f"Student {sn}",
-         f"  passed {len(tx['passed_set'])} courses | GPA {tx['gpa']:.0f} | {tx['credits_passed']:.0f} credits"
+         f"  passed {len(tx['passed_set'])} courses | WAM {tx.get('gpa_passed', tx['gpa']):.0f} | {tx['credits_passed']:.0f} credits"
          f" | year {tx['year_of_study']} | {tx['semesters_registered']} semesters",
          f"  ERS standing: {ers['status'].upper()}  [{ers['code']}]  {ers['label']}",
          f"    cumulative {m['cumulative']['credit_pct_passed']*100:.0f}%  ·"

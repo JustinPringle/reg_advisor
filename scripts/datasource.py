@@ -147,7 +147,7 @@ class CsvSource:
 
         return {
             "bio": {**self.bio.get(sn, {"sn": sn}),
-                    "gpa": round(tx["gpa"]), "credits_passed": round(tx["credits_passed"]),
+                    "gpa": round(tx.get("gpa_passed", tx["gpa"])), "credits_passed": round(tx["credits_passed"]),
                     "passed_count": len(tx["passed_set"]),
                     "semesters": tx["semesters_registered"],
                     "in_progress": in_progress},
