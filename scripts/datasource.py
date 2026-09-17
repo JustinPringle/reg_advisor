@@ -42,12 +42,34 @@ STATUS_OF_CODE: dict[str, str] = {
 _EXCLUDE = {"XNFA", "XACA", "XAC"}
 
 
+def latest_year(results: dict[str, list[dict[str, Any]]]) -> str:
+    """The newest calendar year anywhere in the cohort's rows."""
+    return max((str(r.get("calendar_year") or "")
+                for rows in results.values() for r in rows), default="")
+
+
+def in_progress_now(rows: list[dict[str, Any]], year: str) -> list[str]:
+    """Modules the student is sitting NOW: a row with no result and no mark,
+    in the current calendar year.
+
+    The year test is the whole point. A blank row is the ERS saying "registered,
+    nothing posted yet", and an export is a snapshot of the day it was run, so
+    old exports leave blank rows behind for periods that have since been
+    settled -- or for registrations the registrar later dropped. Without the
+    year test every such leftover reads as a live registration.
+    """
+    return sorted({r["course_code"] for r in rows
+                   if str(r.get("calendar_year") or "") == year
+                   and not r["result_code"] and r["mark"] is None and r["course_code"]})
+
+
 class CsvSource:
     """Read the parser's output and the authored curriculum."""
 
     def __init__(self) -> None:
         self.cur = load_programme(str(YAML))
         self.results = load_results(str(RESULTS))
+        self.current_year = latest_year(self.results)
         self.bio = self._load_bio()
         self.history = self._load_history()
         self._cache: dict[str, dict[str, Any]] = {}
@@ -123,9 +145,7 @@ class CsvSource:
         a = self._advise(sn)
         tx, m, ers, cap, adv = a["tx"], a["metrics"], a["ers"], a["cap"], a["advice"]
         h = self.history.get(sn, {})
-        in_progress = sorted({r["course_code"] for r in self.results[sn]
-                              if not r["result_code"] and r["mark"] is None
-                              and r["course_code"]})
+        in_progress = in_progress_now(self.results[sn], self.current_year)
 
         def slim(bucket: list[dict[str, Any]]) -> list[dict[str, Any]]:
             out = []

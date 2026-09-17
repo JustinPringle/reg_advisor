@@ -26,6 +26,7 @@ from advise import advise_student, check_additions
 from regadvisor_engine import code_level
 import regadvisor_engine as R
 from standing_codes import status_of, status_of_colour, EXCLUDE_CODES
+from datasource import in_progress_now
 
 # The registrar-code -> standing map lives in standing_codes, shared with the
 # checker so the two never drift. status_of() resolves an unrecognised code to
@@ -249,8 +250,7 @@ class SqliteSource:
                     "advice": {k: [] for k in ("can_register", "concession_possible",
                                "cannot_register", "needs_review", "passed")}}
         tx, m, ers, cap, adv = a["tx"], a["metrics"], a["ers"], a["cap"], a["advice"]
-        in_progress = sorted({r["course_code"] for r in self.results[sn]
-                              if not r["result_code"] and r["mark"] is None and r["course_code"]})
+        in_progress = in_progress_now(self.results[sn], self.current_year)
 
         twins = (self.cur or {}).get("twins") or {}
         attempts = tx.get("attempts", {})
