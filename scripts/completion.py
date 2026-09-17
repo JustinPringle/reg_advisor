@@ -6,18 +6,18 @@ Two lists the coordinator hands to an administrator to capture:
   DG    Degree complete. Every prescribed module in the programme is passed
         (a pass code, or a mark >= 50). The student has met the curriculum.
 
-  DGOR  Degree, only vacation work outstanding. Everything else is passed; the
-        single remaining prescribed requirement is practical vacation work,
-        done in the vacation and captured later. These students graduate the
-        moment the vac-work pass lands, so admin watches them.
+  DGOR  Degree, only a practical requirement outstanding. Everything else is
+        passed; what remains is a zero-credit practical -- vacation work, or a
+        workshop/practice course -- captured outside the exam record. These
+        students graduate the moment that pass lands, so admin watches them.
 
 Both are pure read-outs of the transcript against the programme's own module
 list -- no new thresholds, no judgement. A near-miss on any academic module
 keeps a student off both lists.
 
-Vac-work modules are identified from the programme file: a module may carry
-`vac_work: true`, and as a safe default any 0-credit DP module whose name
-mentions "vacation" is treated as vac work.
+Practical requirements are identified from the programme file by
+`regadvisor_engine.is_practical_requirement` -- the one definition, shared with
+the finalist plan.
 """
 from __future__ import annotations
 from typing import Any
@@ -103,16 +103,6 @@ def completion_period(rows: list[dict[str, Any]], prescribed_core: set[str],
     return (year, sem, order in (1.5, 2.5))
 
 
-def is_vac_work(mod: dict[str, Any]) -> bool:
-    """A module counted as practical vacation work."""
-    if mod.get("vac_work"):
-        return True
-    name = str(mod.get("name") or "").lower()
-    credits = mod.get("credits")
-    zero = isinstance(credits, (int, float)) and float(credits) == 0
-    return bool(mod.get("is_dp") and zero and "vacation" in name)
-
-
 def prescribed_modules(cur: dict[str, Any]) -> list[dict[str, Any]]:
     """The modules a degree actually requires -- prescribed, not elective slots."""
     return [m for m in cur.get("modules", [])
@@ -194,7 +184,8 @@ def electives_from_tx(cur: dict[str, Any], tx: dict[str, Any]) -> list[dict[str,
 
 def classify_completion(cur: dict[str, Any], tx: dict[str, Any]) -> dict[str, Any]:
     """Return one student's completion picture: DG, DGOR, or None."""
-    vac_codes = {m["code"] for m in prescribed_modules(cur) if is_vac_work(m)}
+    practical = {m["code"] for m in prescribed_modules(cur)
+                 if R.is_practical_requirement(m)}
 
     outstanding: list[dict[str, Any]] = []
     for m in prescribed_modules(cur):
@@ -204,12 +195,12 @@ def classify_completion(cur: dict[str, Any], tx: dict[str, Any]) -> dict[str, An
         outstanding.append({
             "code": m["code"], "name": m.get("name", ""),
             "credits": float(m.get("credits") or 0),
-            "is_vac_work": m["code"] in vac_codes,
+            "is_practical": m["code"] in practical,
             "attempted": bool(b),
             "mark": (b["mark"] if b else None)})
 
-    academic_left = [o for o in outstanding if not o["is_vac_work"]]
-    vac_left = [o for o in outstanding if o["is_vac_work"]]
+    academic_left = [o for o in outstanding if not o["is_practical"]]
+    practical_left = [o for o in outstanding if o["is_practical"]]
 
     rule = elective_rule(cur)
     electives = electives_from_tx(cur, tx)
@@ -221,12 +212,12 @@ def classify_completion(cur: dict[str, Any], tx: dict[str, Any]) -> dict[str, An
     # lists rather than being mis-listed.
     status: str | None = None
     if not academic_left and electives_ok:
-        status = "DC" if not vac_left else "DGOR"
+        status = "DC" if not practical_left else "DGOR"
 
     return {"status": status,
             "outstanding": outstanding,
             "academic_outstanding": academic_left,
-            "vac_outstanding": vac_left,
+            "practical_outstanding": practical_left,
             "electives": electives,
             "electives_ok": electives_ok, "elective_note": elective_note}
 
@@ -253,7 +244,8 @@ def completion_lists(cur: dict[str, Any],
     """Run every student and split into the DC and DGOR admin lists."""
     bio = bio or {}
     rule = elective_rule(cur)
-    vac_core = {R.core_code(m["code"]) for m in prescribed_modules(cur) if is_vac_work(m)}
+    practical_core = {R.core_code(m["code"]) for m in prescribed_modules(cur)
+                      if R.is_practical_requirement(m)}
     presc_core = {R.core_code(m["code"]) for m in prescribed_modules(cur)}
     dc: list[dict[str, Any]] = []
     dgor: list[dict[str, Any]] = []
@@ -266,7 +258,7 @@ def completion_lists(cur: dict[str, Any],
         name = f"{b.get('surname','')}, {b.get('name','')}".strip(", ")
         electives = c["elective_note"]
         # The period the degree (or, for DGOR, the coursework) was completed.
-        exclude = vac_core if c["status"] == "DGOR" else set()
+        exclude = practical_core if c["status"] == "DGOR" else set()
         per = completion_period(rows, presc_core, exclude, rule, tx.get("core_len"))
         year, sem, supp = per if per else ("", "", False)
         base = {"student_number": sn, "name": name,
@@ -279,9 +271,9 @@ def completion_lists(cur: dict[str, Any],
         if c["status"] == "DC":
             dc.append({**base, "note": "all prescribed modules passed"})
         else:
-            vac = "; ".join(f"{o['code']} {o['name']}" for o in c["vac_outstanding"])
-            dgor.append({**base, "outstanding": vac,
-                         "note": "only vacation work outstanding"})
+            left = "; ".join(f"{o['code']} {o['name']}" for o in c["practical_outstanding"])
+            dgor.append({**base, "outstanding": left,
+                         "note": "only a practical requirement outstanding"})
     # Newest completions first, then by name.
     order = lambda r: (-(r["completed_year"] or 0), -(r["completed_semester"] or 0), r["name"].lower())
     dc.sort(key=order)
@@ -323,7 +315,7 @@ def main() -> None:
     lists = completion_lists(cur, results)
     print(f"{cur['programme']['name']}: "
           f"{len(lists['DC'])} degree-complete (DC), "
-          f"{len(lists['DGOR'])} vac-work-only (DGOR)")
+          f"{len(lists['DGOR'])} practical-outstanding (DGOR)")
 
 
 if __name__ == "__main__":

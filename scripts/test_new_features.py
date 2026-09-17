@@ -34,11 +34,14 @@ def test_catalogue_reads_folder():
     print(f"  catalogue: {len(rows)} programmes, resolve works")
 
 
-def test_vac_work_detection():
+def test_practical_requirement_detection():
     cur = load_programme(CIVIL_YAML)
-    vac = [m["code"] for m in C.prescribed_modules(cur) if C.is_vac_work(m)]
-    assert vac == ["ENCV4VW"], vac
-    print(f"  vac-work module identified: {vac}")
+    vac = [m["code"] for m in C.prescribed_modules(cur)
+           if R.is_practical_requirement(m)]
+    # Every zero-credit DP requirement, not vacation work alone: the workshop
+    # and practice courses are captured the same way and read the same way.
+    assert sorted(vac) == ["ENCV1EP", "ENCV2MW", "ENCV3CW", "ENCV4VW"], vac
+    print(f"  practical requirements identified: {sorted(vac)}")
 
 
 def test_dg_and_dgor_synthetic():
@@ -57,7 +60,7 @@ def test_dg_and_dgor_synthetic():
     tx_novac = R.index_transcript(rows_passing(non_vac))
     c = C.classify_completion(cur, tx_novac)
     assert c["status"] == "DGOR", c["status"]
-    assert [o["code"] for o in c["vac_outstanding"]] == ["ENCV4VW"]
+    assert [o["code"] for o in c["practical_outstanding"]] == ["ENCV4VW"]
     # Drop an academic module -> neither.
     tx_gap = R.index_transcript(rows_passing(all_codes[:-3]))
     assert C.classify_completion(cur, tx_gap)["status"] is None
