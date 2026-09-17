@@ -1,0 +1,409 @@
+From 5f9d58d14212efc7899591cd07e4b375184c35d9 Mon Sep 17 00:00:00 2001
+From: Justin <j@ukzn>
+Date: Thu, 17 Sep 2026 02:49:21 +0000
+Subject: [PATCH] Use the colours everywhere, and show the rules a standing
+ came from
+
+Deyajal was still orange in the app after the last patch because the colours
+stopped at the checker: store_to_parsed never read them, so every path that runs
+off the captured data - the cohort check, the per-student detail, the badge -
+still saw a student with one RISK from 2023 and nothing since.
+
+  - store.colour_rows() gives the colour table in the parser's shape, and
+    store_to_parsed hands it over with the results and decisions.
+  - _load_history reads a student's standing from the newest COLOUR period, not
+    the newest code. A code is written only when something needs saying, so the
+    newest one can be years old; reading it as today's standing leaves a student
+    flagged at risk long after the registrar put them back on green.
+  - student_detail assembles the same inputs the cohort check does, including
+    the run period, which it was taking from the student's own last decision -
+    so a student whose last code was 2023 was being checked against 2023.
+    Verified identical to the cohort row on a sample of 40.
+  - check_parsed counts anyone the registrar stated a standing for, colour
+    included, so the cohort is the cohort rather than only the coded part of it.
+    ENG-CIVIL 2026:1 with no roster: 168 students checked becomes 299.
+
+For seeing why: engine.explain() walks every criterion in order and reports each
+rule as passed or failed, and the detail dialog renders it as the path the
+student took - the tests they cleared, then the one that applied. The dialog also
+shows the full colour history, which standing the registrar stated and whether it
+came from a code or the colour block. The ERS tab gains an "All students" list,
+searchable, so any student can be opened, not only the disagreements.
+
+Also: a missing rule file made the engine fall back to its built-in defaults,
+which carry no progression table. It answered, and the answers were wrong - 88
+invented mismatches in a run I made with an unresolvable yaml path. The check now
+reports rules_ready and the tab says so plainly instead of showing the fallout as
+disagreement.
+---
+ scripts/checks_service.py    | 66 ++++++++++++++++++++++++++++++------
+ scripts/datasource_sqlite.py | 39 ++++++++++++++++++---
+ scripts/ers_check.py         |  8 ++++-
+ scripts/ers_engine.py        | 30 ++++++++++++++++
+ scripts/store.py             | 10 ++++++
+ web/advisor.html             | 64 ++++++++++++++++++++++++++++++++--
+ 6 files changed, 199 insertions(+), 18 deletions(-)
+
+diff --git a/scripts/checks_service.py b/scripts/checks_service.py
+index 2a19def..ce7f250 100644
+--- a/scripts/checks_service.py
++++ b/scripts/checks_service.py
+@@ -25,13 +25,19 @@ from ers_ingest import parse_file
+ 
+ 
+ def store_to_parsed(store: Any, programme: str) -> dict[str, list[dict[str, Any]]]:
+-    """The captured (final) data in the parser's {students, results, decisions} shape."""
++    """The captured (final) data in the parser's shape.
++
++    Includes the colour rows. Leaving them out is not a smaller answer, it is a
++    different one: without them every student in good standing looks like a
++    student we have nothing on.
++    """
+     results: list[dict[str, Any]] = []
+     for sn, rows in store.results(programme).items():
+         results.extend(rows)
+     return {"students": store.students(programme),
+             "results": results,
+-            "decisions": store.decisions(programme)}
++            "decisions": store.decisions(programme),
++            "colours": store.colour_rows(programme)}
+ 
+ 
+ def results_by_sn(store: Any, programme: str) -> dict[str, list[dict[str, Any]]]:
+@@ -102,10 +108,20 @@ def ers_check(store: Any, programme: str, source: str = "final",
+         source = "final"
+         parsed = store_to_parsed(store, programme)
+ 
++    # Without the programme's rule file the engine falls back to its built-in
++    # defaults, which have no progression table -- it will answer, and the
++    # answers will be wrong. Say so rather than let a silent fallback be read as
++    # a cohort full of disagreements.
+     report = X.check_parsed(parsed, cur, roster=only)
++    report["rules_ready"] = cur is not None
++    if cur is None:
++        report["warning"] = (f"No rule file loaded for {programme}: the check ran on "
++                             "built-in defaults, not this programme's thresholds.")
+     if only is not None:
+         rows = [r for r in report["rows"] if str(r["student_number"]) in only]
+-        report = {"rows": rows, "summary": X._summary(rows)}
++        report = {"rows": rows, "summary": X._summary(rows),
++                  "rules_ready": report["rules_ready"],
++                  **({"warning": report["warning"]} if "warning" in report else {})}
+     return {"ready": True, "source": source, **report}
+ 
+ def student_detail(store: Any, programme: str, sn: str,
+@@ -136,19 +152,42 @@ def student_detail(store: Any, programme: str, sn: str,
+     bio = next((s for s in parsed["students"]
+                 if str(s["student_number"]) == sn), {})
+     sdecs = [d for d in parsed["decisions"] if str(d["student_number"]) == sn]
++    scols = [c for c in (parsed.get("colours") or [])
++             if str(c["student_number"]) == sn]
+ 
+-    # The engine's own view -- same call the cohort check makes.
+-    dd = X.latest_two_decisions(sdecs).get(sn, {})
+-    reg = (dd.get("current") or {}).get("code", "")
+-    prior = (dd.get("prior") or {}).get("code")
++    # The engine's own view -- the same inputs the cohort check assembles, so a
++    # student opened here can never read differently from their row in the list.
++    # The run period comes from the WHOLE cohort's decisions, not this student's:
++    # a student whose last code is years old is being checked for the current
++    # period, not for the period that code belongs to.
++    run_year, run_sem = X._run_period(parsed["decisions"])
++    dd = X.latest_two_decisions(parsed["decisions"]).get(sn) or {}
++    if dd:
++        reg = (dd.get("current") or {}).get("code", "")
++        prior = (dd.get("prior") or {}).get("code")
++        year, sem = dd["current"]["year"], dd["current"]["sem"]
++    else:
++        reg, year, sem = "", run_year, run_sem
++        prior = (X.latest_decision_by_sn(parsed["decisions"]).get(sn) or {}).get("term_code")
++    colour, prev = X._colour_around(X._colours_by_sn(scols).get(sn, []),
++                                    str(year), X._int(sem))
++    if prev:
++        prior = next((d.get("term_code") or "" for d in sdecs
++                      if str(d.get("calendar_year")) == prev["year"]
++                      and X._int(d.get("semester")) == prev["sem"]), "")
+     policy = ((cur or {}).get("rules") or {}).get("ers")
+-    chk = X.check_student(rows, reg, prior, policy)
++    chk = X.check_student(rows, reg, prior, policy,
++                          registrar_colour=colour,
++                          prior_colour=(prev or {}).get("colour"))
+ 
+     # Credit totals as the engine counts them (best attempt per course).
+     shaped = X._shape_rows(rows)
+-    full = E.derive_metrics(shaped, policy, None)
++    hist = {"last_status": chk["prior_status"], "appeals_exhausted": False}
++    full = E.derive_metrics(shaped, policy, hist)
+     metrics = full["cumulative"]
+-    # metrics = E.derive_metrics(shaped, policy, None)["cumulative"]
++    # Every criterion in order, not just the one that fired: the path the
++    # student took through the rules is what makes a verdict auditable.
++    trace = E.explain(full, policy=policy)
+ 
+     # Module record by period, using the engine's pass rule (shaped is 1:1).
+     periods: dict[str, dict[str, Any]] = {}
+@@ -180,7 +219,14 @@ def student_detail(store: Any, programme: str, sn: str,
+             "registrar_status": chk["registrar_status"],
+             "engine_code": chk["engine_code"], "engine_status": chk["engine_status"],
+             "engine_label": chk["engine_label"], "reasons": chk["reasons"],
++            "trace": trace,
++            "registrar_colour": chk.get("registrar_colour", ""),
++            "registrar_source": chk.get("registrar_source", "none"),
++            "colours": [{"period": f"{c['calendar_year']}:{X._int(c['semester'])}",
++                         "colour": (c.get("colour") or "").lower(),
++                         "text": c.get("colour_text") or ""} for c in scols],
+             "prior_code": prior or "",
++            "prior_status": chk["prior_status"],
+             "cumulative_pct": chk["cumulative_pct"],
+             "semester_pct": chk["semester_pct"], "period": chk["period"],
+             "credits_passed": metrics["credits_passed_to_date"],
+diff --git a/scripts/datasource_sqlite.py b/scripts/datasource_sqlite.py
+index 077ac3d..7ea6c3b 100644
+--- a/scripts/datasource_sqlite.py
++++ b/scripts/datasource_sqlite.py
+@@ -25,7 +25,7 @@ from programme_loader import load_programme
+ from advise import advise_student, check_additions
+ from regadvisor_engine import code_level
+ import regadvisor_engine as R
+-from standing_codes import status_of, EXCLUDE_CODES
++from standing_codes import status_of, status_of_colour, EXCLUDE_CODES
+ 
+ # The registrar-code -> standing map lives in standing_codes, shared with the
+ # checker so the two never drift. status_of() resolves an unrecognised code to
+@@ -114,10 +114,41 @@ class SqliteSource:
+         return out
+ 
+     def _load_history(self) -> dict[str, dict[str, Any]]:
++        """Each student's standing as the registrar last stated it.
++
++        The newest COLOUR period, not the newest code. A code is written only
++        when something needs saying, so the newest one can be years old: reading
++        it as the student's standing today leaves someone flagged at risk long
++        after the registrar returned them to green. The colour block runs to the
++        current period, so its last row is the right place to look; the code for
++        that same period is used when there is one, since it says more than the
++        colour does.
++        """
+         latest = self.store.latest_decisions(self.programme)
+-        return {sn: {"code": h["code"], "text": h["text"],
+-                     "status": status_of(h["code"], self.ers_policy)}
+-                for sn, h in latest.items()}
++        colours = self.store.colour_codes(self.programme)
++        codes = {(str(d["student_number"]), f"{d['calendar_year']}:{d['semester']}"):
++                 (d.get("term_code") or "", d.get("term_text") or "")
++                 for d in self.store.decisions(self.programme)}
++
++        def period_key(p: str) -> tuple[str, int]:
++            y, _, s = p.partition(":")
++            return (y, int(s) if s.isdigit() else 0)
++
++        out: dict[str, dict[str, Any]] = {}
++        for sn, h in latest.items():                 # no colours: as before
++            out[sn] = {"code": h["code"], "text": h["text"], "period": "",
++                       "status": status_of(h["code"], self.ers_policy)}
++        for sn, periods in colours.items():
++            if not periods:
++                continue
++            last = max(periods, key=period_key)
++            code, text = codes.get((sn, last), ("", ""))
++            out[sn] = {"code": code, "text": text or periods[last]["text"],
++                       "period": last,
++                       "status": (status_of(code, self.ers_policy) if code
++                                  else status_of_colour(periods[last]["colour"],
++                                                        self.ers_policy))}
++        return out
+ 
+     def _engine_history(self, sn: str) -> dict[str, Any]:
+         h = self.history.get(sn)
+diff --git a/scripts/ers_check.py b/scripts/ers_check.py
+index d4ee920..0689513 100644
+--- a/scripts/ers_check.py
++++ b/scripts/ers_check.py
+@@ -209,6 +209,7 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
+                          else "engine more lenient")
+     return {"registrar_code": reg_code, "registrar_status": reg_status,
+             "registrar_colour": colour, "registrar_source": source,
++            "prior_status": hist["last_status"],
+             "engine_code": ers["code"], "engine_status": eng_status,
+             "engine_label": ers["label"], "verdict": verdict, "direction": direction,
+             "cumulative_pct": round(metrics["cumulative"]["credit_pct_passed"] * 100),
+@@ -246,7 +247,12 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
+                         _int(d.get("semester"))): (d.get("term_code") or "")
+                        for d in decs}
+ 
+-    targets = set(decisions) | (set(roster) if roster is not None else set())
++    # Anyone the registrar stated a standing for this period, plus the roster.
++    # The colour block covers the students who carry no code -- leaving them out
++    # would hide every student in good standing from the check.
++    stated = {sn for sn, rows in colours.items()
++              if any(r["year"] == str(run_year) and r["sem"] == _int(run_sem) for r in rows)}
++    targets = set(decisions) | stated | (set(roster) if roster is not None else set())
+ 
+     rows: list[dict[str, Any]] = []
+     for sn in targets:
+diff --git a/scripts/ers_engine.py b/scripts/ers_engine.py
+index 8725c1b..83e0c4d 100644
+--- a/scripts/ers_engine.py
++++ b/scripts/ers_engine.py
+@@ -234,6 +234,36 @@ def classify(metrics: dict[str, Any],
+             "label": "Unclassified", "reasons": ["no criterion matched"]}
+ 
+ 
++def explain(metrics: dict[str, Any],
++            criteria: list[dict[str, Any]] | None = None,
++            policy: dict[str, Any] | None = None) -> list[dict[str, Any]]:
++    """The path through the rules, not just the verdict.
++
++    Every criterion in order with each of its rules marked pass or fail, up to
++    and including the one that fired. Same walk as classify(), reported rather
++    than reduced, so a standing can be audited by reading it.
++    """
++    if criteria is None:
++        criteria = build_criteria(policy or DEFAULT_POLICY)
++    out = []
++    for crit in criteria:
++        rules = []
++        for path, op, val in crit["rules"]:
++            actual = _get(metrics, path)
++            try:
++                ok = _OPS[op](actual, val)
++            except (TypeError, ValueError):
++                ok = False
++            rules.append({"path": path, "op": op, "value": val,
++                          "actual": actual, "ok": ok})
++        matched = all(r["ok"] for r in rules)
++        out.append({"code": crit["code"], "status": crit["status"],
++                    "label": crit["label"], "matched": matched, "rules": rules})
++        if matched:
++            break
++    return out
++
++
+ # --- Institution mapper: raw result rows -> decision metrics ----------------
+ def derive_metrics(results: list[dict[str, Any]],
+                    policy: dict[str, Any] | None = None,
+diff --git a/scripts/store.py b/scripts/store.py
+index ece91ec..1c33bf3 100644
+--- a/scripts/store.py
++++ b/scripts/store.py
+@@ -282,6 +282,16 @@ class Store:
+             " ORDER BY student_number, calendar_year, semester", (programme,)).fetchall()
+         return [dict(r) for r in rows]
+ 
++    def colour_rows(self, programme: str) -> list[dict[str, Any]]:
++        """Every colour row for a programme, in the parser's shape. The list
++        form of colour_codes(), so the captured data can be handed to the
++        checker exactly as a fresh parse would be."""
++        rows = self.db.execute(
++            "SELECT student_number, calendar_year, semester, colour, colour_text"
++            " FROM colour_codes WHERE programme=?"
++            " ORDER BY student_number, calendar_year, semester", (programme,)).fetchall()
++        return [dict(r, programme=programme) for r in rows]
++
+     def latest_decisions(self, programme: str) -> dict[str, dict[str, Any]]:
+         """Newest term-decision row per student, by (year, semester)."""
+         rows = self.db.execute(
+diff --git a/web/advisor.html b/web/advisor.html
+index 71ef833..6425f16 100644
+--- a/web/advisor.html
++++ b/web/advisor.html
+@@ -539,6 +539,7 @@ function renderErsCohortMain(){
+   const rows=(d.rows||[]).filter(r=>r.verdict==="mismatch"||r.verdict==="review"
+               ||(r.verdict==="engine-only"&&r.engine_status!=="green"));
+   $("#main").innerHTML=`
++    ${d.rules_ready===false?`<div class="card"><div class="flag warn">${esc(d.warning||"No rule file loaded: the check ran on built-in defaults.")}</div></div>`:""}
+     <div class="card"><h2>ERS check \u00b7 ${esc(cycleLabel(CYCLE))}</h2>
+       <div class="row">
+         <div class="kv"><b>${s.total||0}</b><span>students</span></div>
+@@ -553,10 +554,47 @@ function renderErsCohortMain(){
+         <button class="primary" style="margin-left:12px" ${s.mismatch?"":"disabled"} onclick="exportErs()">Export mismatches (CSV)</button>
+         <span class="saved" id="saved2" style="margin-left:10px"></span></div></div>
+     <div class="card"><h2>Codes to check \u00b7 ${rows.length} of ${s.total||0}</h2>
+-      ${rows.length?`<table><thead><tr><th>Student</th><th>ERS proposed</th><th>Engine</th><th>Difference</th><th>Basis</th></tr></thead>
++      ${rows.length?`<table><thead><tr><th>Student</th><th>ERS standing</th><th>Engine</th><th>Difference</th><th>Basis</th></tr></thead>
+         <tbody>${rows.map(ersRow).join("")}</tbody></table>`
+       :'<p style="font-size:13px;color:var(--muted);margin:0">Every proposed code agrees with the engine.</p>'}
++    </div>
++    <div class="card"><h2>All students \u00b7 ${(d.rows||[]).length}</h2>
++      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">
++        Every student the check covered, agreeing or not. Open one to see the
++        rules it walked and the record they were read from.</p>
++      <input id="ersfind" class="cysel" style="width:100%;margin-bottom:8px"
++             placeholder="Find by name or student number" oninput="renderErsAll(this.value)">
++      <div id="ersall"></div>
+     </div>`;
++  renderErsAll("");
++}
++function renderErsAll(q){
++  const all=(RUNDATA&&RUNDATA.rows)||[];
++  q=(q||"").trim().toLowerCase();
++  const rows=(q?all.filter(r=>(r.name||"").toLowerCase().includes(q)
++                              ||String(r.student_number).includes(q)):all)
++    .slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
++  const el=document.getElementById("ersall"); if(!el) return;
++  el.innerHTML = rows.length
++    ? `<table><thead><tr><th>Student</th><th>ERS standing</th><th>Engine</th><th>Agrees</th><th>Basis</th></tr></thead>
++       <tbody>${rows.slice(0,400).map(ersAllRow).join("")}</tbody></table>
++       ${rows.length>400?`<p style="font-size:12px;color:var(--muted)">Showing the first 400 of ${rows.length}. Narrow the search to see the rest.</p>`:""}`
++    : '<p style="font-size:13px;color:var(--muted);margin:0">No student matches that.</p>';
++}
++function ersAllRow(r){
++  const agree = r.verdict==="match" ? '<span class="badge b-green">agrees</span>'
++    : r.verdict==="mismatch" ? '<span class="badge b-red">differs</span>'
++    : `<span class="badge b-gray">${esc(r.verdict)}</span>`;
++  const stated = r.registrar_code || (r.registrar_colour?r.registrar_colour:"\u2014");
++  const src = r.registrar_source==="colour" ? " (colour)" : "";
++  return `<tr onclick="ersDetail('${r.student_number}')" style="cursor:pointer" title="Open full record">
++    <td>${esc(r.name)||r.student_number}<br><span style="color:var(--muted)">${esc(r.student_number)}</span></td>
++    <td><span class="badge ${BADGE[r.registrar_status]}">${esc(stated)}</span>
++        <span style="color:var(--muted);font-size:11px">${esc(src)}</span></td>
++    <td><span class="badge ${BADGE[r.engine_status]}">${esc(r.engine_status)}</span><br>
++        <span style="color:var(--muted);font-size:11px">${esc(r.engine_code||"")}</span></td>
++    <td>${agree}</td>
++    <td style="color:var(--muted)">cum ${r.cumulative_pct}% \u00b7 sem ${r.semester_pct}%</td></tr>`;
+ }
+ function ersRow(r){
+   const dirCol=r.direction==="engine stricter"?"b-red":r.direction==="engine more lenient"?"b-orange":"b-blue";
+@@ -671,10 +709,11 @@ function renderErsDetail(d){
+     <p style="margin:0 0 10px;color:var(--muted)">${esc(d.student_number)} \u00b7 source: ${esc(d.source)}</p>
+     <div class="card" style="margin:0 0 12px">
+       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">
+-        <span>ERS proposed <span class="badge ${BADGE[d.registrar_status]}">${esc(d.registrar_code||"\u2014")}</span></span>
++        <span>ERS states <span class="badge ${BADGE[d.registrar_status]}">${esc(d.registrar_code||d.registrar_colour||"\u2014")}</span>
++          <span style="color:var(--muted);font-size:11px">${esc(d.registrar_source==="colour"?"from colour block":d.registrar_source==="code"?"term code":"nothing on file")}</span></span>
+         <span>Engine <span class="badge ${BADGE[d.engine_status]}">${esc(d.engine_status)}</span>
+               <span style="color:var(--muted);font-size:11px">${esc(d.engine_code||"")}</span></span>
+-        <span>Prior <span class="badge b-gray">${esc(d.prior_code||"none")}</span></span>
++        <span>Prior <span class="badge ${BADGE[d.prior_status]||"b-gray"}">${esc(d.prior_code||d.prior_status||"none")}</span></span>
+       </div>
+       <div class="stats">
+         <div class="kv"><b>${d.credits_passed}</b><span>credits passed${d.credits_assessed?` of ${d.credits_assessed}`:""}</span></div>
+@@ -688,6 +727,25 @@ function renderErsDetail(d){
+       </div>
+       <ul style="margin:8px 0 0;padding-left:18px">${reasons}</ul>
+     </div>
++    <h3 style="margin:0 0 4px">Decision path</h3>
++    <p style="font-size:12px;color:var(--muted);margin:0 0 6px">
++      Every rule in order. The engine takes the first one whose tests all pass;
++      the rest above it are the tests this student cleared.</p>
++    ${(d.trace||[]).map(t=>`
++      <div style="margin:0 0 6px;padding:6px 8px;border-left:3px solid ${t.matched?"var(--ok,#2e7d32)":"var(--line,#ddd)"}">
++        <div><span class="badge ${BADGE[t.status]}">${esc(t.code)}</span>
++          <span style="font-size:12px">${esc(t.label)}</span>
++          ${t.matched?'<b style="font-size:12px"> \u2190 applied</b>':""}</div>
++        <ul style="margin:4px 0 0;padding-left:18px">${(t.rules||[]).map(r=>`
++          <li style="font-size:12px;color:${r.ok?"var(--muted)":"#b3261e"}">
++            ${r.ok?"\u2713":"\u2717"} ${esc(r.path)} ${esc(r.op)} ${esc(String(r.value))}
++            <span style="color:var(--muted)">(is ${esc(String(r.actual))})</span></li>`).join("")}</ul>
++      </div>`).join("")}
++    <h3 style="margin:14px 0 4px">Colour history</h3>
++    ${(d.colours||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${
++      (d.colours||[]).map(c=>`<span class="badge ${BADGE[c.colour]||"b-gray"}"
++        title="${esc(c.text||"")}">${esc(c.period)} ${esc(c.colour)}</span>`).join("")}</div>`
++      :'<p style="font-size:13px;color:var(--muted);margin:0">None on file.</p>'}
+     <h3 style="margin:0 0 4px">Decision history</h3>
+     <table><thead><tr><th>Period</th><th>Code</th><th>Kind</th><th>Note</th></tr></thead>
+       <tbody>${decs||'<tr><td colspan="4" style="color:var(--muted)">None on file.</td></tr>'}</tbody></table>
+-- 
+2.43.0
+

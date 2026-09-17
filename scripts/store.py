@@ -282,6 +282,16 @@ class Store:
             " ORDER BY student_number, calendar_year, semester", (programme,)).fetchall()
         return [dict(r) for r in rows]
 
+    def colour_rows(self, programme: str) -> list[dict[str, Any]]:
+        """Every colour row for a programme, in the parser's shape. The list
+        form of colour_codes(), so the captured data can be handed to the
+        checker exactly as a fresh parse would be."""
+        rows = self.db.execute(
+            "SELECT student_number, calendar_year, semester, colour, colour_text"
+            " FROM colour_codes WHERE programme=?"
+            " ORDER BY student_number, calendar_year, semester", (programme,)).fetchall()
+        return [dict(r, programme=programme) for r in rows]
+
     def latest_decisions(self, programme: str) -> dict[str, dict[str, Any]]:
         """Newest term-decision row per student, by (year, semester)."""
         rows = self.db.execute(

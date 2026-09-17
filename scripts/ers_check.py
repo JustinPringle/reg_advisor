@@ -209,6 +209,7 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
                          else "engine more lenient")
     return {"registrar_code": reg_code, "registrar_status": reg_status,
             "registrar_colour": colour, "registrar_source": source,
+            "prior_status": hist["last_status"],
             "engine_code": ers["code"], "engine_status": eng_status,
             "engine_label": ers["label"], "verdict": verdict, "direction": direction,
             "cumulative_pct": round(metrics["cumulative"]["credit_pct_passed"] * 100),
@@ -246,7 +247,12 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
                         _int(d.get("semester"))): (d.get("term_code") or "")
                        for d in decs}
 
-    targets = set(decisions) | (set(roster) if roster is not None else set())
+    # Anyone the registrar stated a standing for this period, plus the roster.
+    # The colour block covers the students who carry no code -- leaving them out
+    # would hide every student in good standing from the check.
+    stated = {sn for sn, rows in colours.items()
+              if any(r["year"] == str(run_year) and r["sem"] == _int(run_sem) for r in rows)}
+    targets = set(decisions) | stated | (set(roster) if roster is not None else set())
 
     rows: list[dict[str, Any]] = []
     for sn in targets:

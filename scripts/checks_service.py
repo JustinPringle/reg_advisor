@@ -25,13 +25,19 @@ from ers_ingest import parse_file
 
 
 def store_to_parsed(store: Any, programme: str) -> dict[str, list[dict[str, Any]]]:
-    """The captured (final) data in the parser's {students, results, decisions} shape."""
+    """The captured (final) data in the parser's shape.
+
+    Includes the colour rows. Leaving them out is not a smaller answer, it is a
+    different one: without them every student in good standing looks like a
+    student we have nothing on.
+    """
     results: list[dict[str, Any]] = []
     for sn, rows in store.results(programme).items():
         results.extend(rows)
     return {"students": store.students(programme),
             "results": results,
-            "decisions": store.decisions(programme)}
+            "decisions": store.decisions(programme),
+            "colours": store.colour_rows(programme)}
 
 
 def results_by_sn(store: Any, programme: str) -> dict[str, list[dict[str, Any]]]:
@@ -102,10 +108,20 @@ def ers_check(store: Any, programme: str, source: str = "final",
         source = "final"
         parsed = store_to_parsed(store, programme)
 
+    # Without the programme's rule file the engine falls back to its built-in
+    # defaults, which have no progression table -- it will answer, and the
+    # answers will be wrong. Say so rather than let a silent fallback be read as
+    # a cohort full of disagreements.
     report = X.check_parsed(parsed, cur, roster=only)
+    report["rules_ready"] = cur is not None
+    if cur is None:
+        report["warning"] = (f"No rule file loaded for {programme}: the check ran on "
+                             "built-in defaults, not this programme's thresholds.")
     if only is not None:
         rows = [r for r in report["rows"] if str(r["student_number"]) in only]
-        report = {"rows": rows, "summary": X._summary(rows)}
+        report = {"rows": rows, "summary": X._summary(rows),
+                  "rules_ready": report["rules_ready"],
+                  **({"warning": report["warning"]} if "warning" in report else {})}
     return {"ready": True, "source": source, **report}
 
 def student_detail(store: Any, programme: str, sn: str,
@@ -136,19 +152,42 @@ def student_detail(store: Any, programme: str, sn: str,
     bio = next((s for s in parsed["students"]
                 if str(s["student_number"]) == sn), {})
     sdecs = [d for d in parsed["decisions"] if str(d["student_number"]) == sn]
+    scols = [c for c in (parsed.get("colours") or [])
+             if str(c["student_number"]) == sn]
 
-    # The engine's own view -- same call the cohort check makes.
-    dd = X.latest_two_decisions(sdecs).get(sn, {})
-    reg = (dd.get("current") or {}).get("code", "")
-    prior = (dd.get("prior") or {}).get("code")
+    # The engine's own view -- the same inputs the cohort check assembles, so a
+    # student opened here can never read differently from their row in the list.
+    # The run period comes from the WHOLE cohort's decisions, not this student's:
+    # a student whose last code is years old is being checked for the current
+    # period, not for the period that code belongs to.
+    run_year, run_sem = X._run_period(parsed["decisions"])
+    dd = X.latest_two_decisions(parsed["decisions"]).get(sn) or {}
+    if dd:
+        reg = (dd.get("current") or {}).get("code", "")
+        prior = (dd.get("prior") or {}).get("code")
+        year, sem = dd["current"]["year"], dd["current"]["sem"]
+    else:
+        reg, year, sem = "", run_year, run_sem
+        prior = (X.latest_decision_by_sn(parsed["decisions"]).get(sn) or {}).get("term_code")
+    colour, prev = X._colour_around(X._colours_by_sn(scols).get(sn, []),
+                                    str(year), X._int(sem))
+    if prev:
+        prior = next((d.get("term_code") or "" for d in sdecs
+                      if str(d.get("calendar_year")) == prev["year"]
+                      and X._int(d.get("semester")) == prev["sem"]), "")
     policy = ((cur or {}).get("rules") or {}).get("ers")
-    chk = X.check_student(rows, reg, prior, policy)
+    chk = X.check_student(rows, reg, prior, policy,
+                          registrar_colour=colour,
+                          prior_colour=(prev or {}).get("colour"))
 
     # Credit totals as the engine counts them (best attempt per course).
     shaped = X._shape_rows(rows)
-    full = E.derive_metrics(shaped, policy, None)
+    hist = {"last_status": chk["prior_status"], "appeals_exhausted": False}
+    full = E.derive_metrics(shaped, policy, hist)
     metrics = full["cumulative"]
-    # metrics = E.derive_metrics(shaped, policy, None)["cumulative"]
+    # Every criterion in order, not just the one that fired: the path the
+    # student took through the rules is what makes a verdict auditable.
+    trace = E.explain(full, policy=policy)
 
     # Module record by period, using the engine's pass rule (shaped is 1:1).
     periods: dict[str, dict[str, Any]] = {}
@@ -180,7 +219,14 @@ def student_detail(store: Any, programme: str, sn: str,
             "registrar_status": chk["registrar_status"],
             "engine_code": chk["engine_code"], "engine_status": chk["engine_status"],
             "engine_label": chk["engine_label"], "reasons": chk["reasons"],
+            "trace": trace,
+            "registrar_colour": chk.get("registrar_colour", ""),
+            "registrar_source": chk.get("registrar_source", "none"),
+            "colours": [{"period": f"{c['calendar_year']}:{X._int(c['semester'])}",
+                         "colour": (c.get("colour") or "").lower(),
+                         "text": c.get("colour_text") or ""} for c in scols],
             "prior_code": prior or "",
+            "prior_status": chk["prior_status"],
             "cumulative_pct": chk["cumulative_pct"],
             "semester_pct": chk["semester_pct"], "period": chk["period"],
             "credits_passed": metrics["credits_passed_to_date"],

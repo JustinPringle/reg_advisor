@@ -539,6 +539,7 @@ function renderErsCohortMain(){
   const rows=(d.rows||[]).filter(r=>r.verdict==="mismatch"||r.verdict==="review"
               ||(r.verdict==="engine-only"&&r.engine_status!=="green"));
   $("#main").innerHTML=`
+    ${d.rules_ready===false?`<div class="card"><div class="flag warn">${esc(d.warning||"No rule file loaded: the check ran on built-in defaults.")}</div></div>`:""}
     <div class="card"><h2>ERS check \u00b7 ${esc(cycleLabel(CYCLE))}</h2>
       <div class="row">
         <div class="kv"><b>${s.total||0}</b><span>students</span></div>
@@ -553,10 +554,47 @@ function renderErsCohortMain(){
         <button class="primary" style="margin-left:12px" ${s.mismatch?"":"disabled"} onclick="exportErs()">Export mismatches (CSV)</button>
         <span class="saved" id="saved2" style="margin-left:10px"></span></div></div>
     <div class="card"><h2>Codes to check \u00b7 ${rows.length} of ${s.total||0}</h2>
-      ${rows.length?`<table><thead><tr><th>Student</th><th>ERS proposed</th><th>Engine</th><th>Difference</th><th>Basis</th></tr></thead>
+      ${rows.length?`<table><thead><tr><th>Student</th><th>ERS standing</th><th>Engine</th><th>Difference</th><th>Basis</th></tr></thead>
         <tbody>${rows.map(ersRow).join("")}</tbody></table>`
       :'<p style="font-size:13px;color:var(--muted);margin:0">Every proposed code agrees with the engine.</p>'}
+    </div>
+    <div class="card"><h2>All students \u00b7 ${(d.rows||[]).length}</h2>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">
+        Every student the check covered, agreeing or not. Open one to see the
+        rules it walked and the record they were read from.</p>
+      <input id="ersfind" class="cysel" style="width:100%;margin-bottom:8px"
+             placeholder="Find by name or student number" oninput="renderErsAll(this.value)">
+      <div id="ersall"></div>
     </div>`;
+  renderErsAll("");
+}
+function renderErsAll(q){
+  const all=(RUNDATA&&RUNDATA.rows)||[];
+  q=(q||"").trim().toLowerCase();
+  const rows=(q?all.filter(r=>(r.name||"").toLowerCase().includes(q)
+                              ||String(r.student_number).includes(q)):all)
+    .slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const el=document.getElementById("ersall"); if(!el) return;
+  el.innerHTML = rows.length
+    ? `<table><thead><tr><th>Student</th><th>ERS standing</th><th>Engine</th><th>Agrees</th><th>Basis</th></tr></thead>
+       <tbody>${rows.slice(0,400).map(ersAllRow).join("")}</tbody></table>
+       ${rows.length>400?`<p style="font-size:12px;color:var(--muted)">Showing the first 400 of ${rows.length}. Narrow the search to see the rest.</p>`:""}`
+    : '<p style="font-size:13px;color:var(--muted);margin:0">No student matches that.</p>';
+}
+function ersAllRow(r){
+  const agree = r.verdict==="match" ? '<span class="badge b-green">agrees</span>'
+    : r.verdict==="mismatch" ? '<span class="badge b-red">differs</span>'
+    : `<span class="badge b-gray">${esc(r.verdict)}</span>`;
+  const stated = r.registrar_code || (r.registrar_colour?r.registrar_colour:"\u2014");
+  const src = r.registrar_source==="colour" ? " (colour)" : "";
+  return `<tr onclick="ersDetail('${r.student_number}')" style="cursor:pointer" title="Open full record">
+    <td>${esc(r.name)||r.student_number}<br><span style="color:var(--muted)">${esc(r.student_number)}</span></td>
+    <td><span class="badge ${BADGE[r.registrar_status]}">${esc(stated)}</span>
+        <span style="color:var(--muted);font-size:11px">${esc(src)}</span></td>
+    <td><span class="badge ${BADGE[r.engine_status]}">${esc(r.engine_status)}</span><br>
+        <span style="color:var(--muted);font-size:11px">${esc(r.engine_code||"")}</span></td>
+    <td>${agree}</td>
+    <td style="color:var(--muted)">cum ${r.cumulative_pct}% \u00b7 sem ${r.semester_pct}%</td></tr>`;
 }
 function ersRow(r){
   const dirCol=r.direction==="engine stricter"?"b-red":r.direction==="engine more lenient"?"b-orange":"b-blue";
@@ -671,10 +709,11 @@ function renderErsDetail(d){
     <p style="margin:0 0 10px;color:var(--muted)">${esc(d.student_number)} \u00b7 source: ${esc(d.source)}</p>
     <div class="card" style="margin:0 0 12px">
       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">
-        <span>ERS proposed <span class="badge ${BADGE[d.registrar_status]}">${esc(d.registrar_code||"\u2014")}</span></span>
+        <span>ERS states <span class="badge ${BADGE[d.registrar_status]}">${esc(d.registrar_code||d.registrar_colour||"\u2014")}</span>
+          <span style="color:var(--muted);font-size:11px">${esc(d.registrar_source==="colour"?"from colour block":d.registrar_source==="code"?"term code":"nothing on file")}</span></span>
         <span>Engine <span class="badge ${BADGE[d.engine_status]}">${esc(d.engine_status)}</span>
               <span style="color:var(--muted);font-size:11px">${esc(d.engine_code||"")}</span></span>
-        <span>Prior <span class="badge b-gray">${esc(d.prior_code||"none")}</span></span>
+        <span>Prior <span class="badge ${BADGE[d.prior_status]||"b-gray"}">${esc(d.prior_code||d.prior_status||"none")}</span></span>
       </div>
       <div class="stats">
         <div class="kv"><b>${d.credits_passed}</b><span>credits passed${d.credits_assessed?` of ${d.credits_assessed}`:""}</span></div>
@@ -688,6 +727,25 @@ function renderErsDetail(d){
       </div>
       <ul style="margin:8px 0 0;padding-left:18px">${reasons}</ul>
     </div>
+    <h3 style="margin:0 0 4px">Decision path</h3>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 6px">
+      Every rule in order. The engine takes the first one whose tests all pass;
+      the rest above it are the tests this student cleared.</p>
+    ${(d.trace||[]).map(t=>`
+      <div style="margin:0 0 6px;padding:6px 8px;border-left:3px solid ${t.matched?"var(--ok,#2e7d32)":"var(--line,#ddd)"}">
+        <div><span class="badge ${BADGE[t.status]}">${esc(t.code)}</span>
+          <span style="font-size:12px">${esc(t.label)}</span>
+          ${t.matched?'<b style="font-size:12px"> \u2190 applied</b>':""}</div>
+        <ul style="margin:4px 0 0;padding-left:18px">${(t.rules||[]).map(r=>`
+          <li style="font-size:12px;color:${r.ok?"var(--muted)":"#b3261e"}">
+            ${r.ok?"\u2713":"\u2717"} ${esc(r.path)} ${esc(r.op)} ${esc(String(r.value))}
+            <span style="color:var(--muted)">(is ${esc(String(r.actual))})</span></li>`).join("")}</ul>
+      </div>`).join("")}
+    <h3 style="margin:14px 0 4px">Colour history</h3>
+    ${(d.colours||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${
+      (d.colours||[]).map(c=>`<span class="badge ${BADGE[c.colour]||"b-gray"}"
+        title="${esc(c.text||"")}">${esc(c.period)} ${esc(c.colour)}</span>`).join("")}</div>`
+      :'<p style="font-size:13px;color:var(--muted);margin:0">None on file.</p>'}
     <h3 style="margin:0 0 4px">Decision history</h3>
     <table><thead><tr><th>Period</th><th>Code</th><th>Kind</th><th>Note</th></tr></thead>
       <tbody>${decs||'<tr><td colspan="4" style="color:var(--muted)">None on file.</td></tr>'}</tbody></table>

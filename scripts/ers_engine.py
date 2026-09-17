@@ -234,6 +234,36 @@ def classify(metrics: dict[str, Any],
             "label": "Unclassified", "reasons": ["no criterion matched"]}
 
 
+def explain(metrics: dict[str, Any],
+            criteria: list[dict[str, Any]] | None = None,
+            policy: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """The path through the rules, not just the verdict.
+
+    Every criterion in order with each of its rules marked pass or fail, up to
+    and including the one that fired. Same walk as classify(), reported rather
+    than reduced, so a standing can be audited by reading it.
+    """
+    if criteria is None:
+        criteria = build_criteria(policy or DEFAULT_POLICY)
+    out = []
+    for crit in criteria:
+        rules = []
+        for path, op, val in crit["rules"]:
+            actual = _get(metrics, path)
+            try:
+                ok = _OPS[op](actual, val)
+            except (TypeError, ValueError):
+                ok = False
+            rules.append({"path": path, "op": op, "value": val,
+                          "actual": actual, "ok": ok})
+        matched = all(r["ok"] for r in rules)
+        out.append({"code": crit["code"], "status": crit["status"],
+                    "label": crit["label"], "matched": matched, "rules": rules})
+        if matched:
+            break
+    return out
+
+
 # --- Institution mapper: raw result rows -> decision metrics ----------------
 def derive_metrics(results: list[dict[str, Any]],
                    policy: dict[str, Any] | None = None,
