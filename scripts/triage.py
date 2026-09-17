@@ -86,7 +86,7 @@ def autoclear(mod_code: str, tx: dict[str, Any], missing: list[str],
     mk = carry_mark(tx, hard[0], tuple(r["carry_band"])) if hard else None
     if mk is None:
         return False, ""
-    wam = tx.get("gpa", 0)
+    wam = tx.get("gpa_passed", tx.get("gpa", 0))   # WAM: passed modules only
     if wam < r["min_wam"]:
         return False, ""
     return True, (f"concession auto-cleared [{r['rule_id']}]: single "

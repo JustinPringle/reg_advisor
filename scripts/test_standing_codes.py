@@ -83,6 +83,64 @@ def test_roster_covers_the_cohort() -> None:
     print("ok test_roster_covers_the_cohort")
 
 
+_POL = {"progression": {1: [48, 72, 54], 2: [96, 144, 108]}}
+
+
+def test_orange_is_carried_until_cumulative_recovers() -> None:
+    """A light load passed in full looks perfect on pass-rate alone, but leaves
+    the student behind on credits. Trees B and C rehabilitate only once the
+    cumulative line (75% of normal) is cleared -- the bug behind the 48
+    'engine more lenient' mismatches."""
+    # Two semesters, everything registered passed, but only 96 credits of the
+    # 144 normal: at or above the 96 minimum, under the 108 three-quarter line.
+    behind = [_rows("1", "2025", "1", "MOD1", 40, 60, "P")[0],
+              _rows("1", "2025", "2", "MOD2", 56, 60, "P")[0]]
+    assert X.check_student(behind, "GREEN", None, _POL)["engine_status"] == "green"
+    assert X.check_student(behind, "RSK2", "RSK2", _POL)["engine_status"] == "orange"
+    assert X.check_student(behind, "PROB", "PROB", _POL)["engine_status"] == "orange"
+    # Back on the cumulative line, but this semester's load is short: 40 credits
+    # passed against 50.4 (70% of one 72-credit semester). Rehabilitation needs
+    # BOTH halves, so the orange stands -- and a light load is at risk on its own
+    # account even with no history, which a pass RATE of 100% would miss.
+    light = [_rows("1", "2025", "1", "MOD1", 72, 60, "P")[0],
+             _rows("1", "2025", "2", "MOD2", 40, 60, "P")[0]]          # 112 cumulative
+    assert X.check_student(light, "GREEN", None, _POL)["engine_code"] == "ERS-ORANGE-LOAD"
+    assert X.check_student(light, "RSK2", "RSK2", _POL)["engine_status"] == "orange"
+    # Clear both lines and the orange student is rehabilitated.
+    recovered = behind + [_rows("1", "2025", "2", "MOD3", 32, 60, "P")[0]]  # 128, load 88
+    assert X.check_student(recovered, "RSK2", "RSK2", _POL)["engine_status"] == "green"
+    print("ok test_orange_is_carried_until_cumulative_recovers")
+
+
+def test_colour_stands_in_for_a_missing_code() -> None:
+    """A period in good standing carries no term code, only a colour. Without
+    reading it the student is unclassifiable; with it the check can be made."""
+    rows = _rows("1", "2026", "1", "MOD1", 72, 60, "P")
+    assert X.check_student(rows, "")["verdict"] == "engine-only"
+    checked = X.check_student(rows, "", registrar_colour="green")
+    assert checked["registrar_source"] == "colour"
+    assert checked["registrar_status"] == "green"
+    assert checked["verdict"] == "match"
+    # A code, when there is one, still wins over the colour.
+    both = X.check_student(rows, "RISK", registrar_colour="green")
+    assert both["registrar_source"] == "code" and both["registrar_status"] == "orange"
+    # The prior period's colour is the history input when it carried no code.
+    assert X.check_student(rows, "", prior_colour="orange",
+                           registrar_colour="orange")["engine_status"] == "orange"
+    print("ok test_colour_stands_in_for_a_missing_code")
+
+
+def test_supp_counts_towards_its_semester() -> None:
+    """The ERS decides on the "Main&Supp" total: a module failed in the main
+    block and passed in the supp has been passed for that semester."""
+    main = (_rows("1", "2026", "1", "MOD1", 40, 60, "P")
+            + _rows("1", "2026", "1", "MOD2", 32, 45, "FS"))
+    supp = _rows("1", "2026", "S1", "MOD2", 32, 52, "P")
+    assert X.check_student(main, "")["semester_pct"] == 56           # main block only
+    assert X.check_student(main + supp, "")["semester_pct"] == 100   # supp settles it
+    print("ok test_supp_counts_towards_its_semester")
+
+
 def main() -> None:
     test_status_is_failsafe()
     test_risu_is_orange()
@@ -90,6 +148,9 @@ def main() -> None:
     test_single_source_of_truth()
     test_check_student_verdicts()
     test_roster_covers_the_cohort()
+    test_orange_is_carried_until_cumulative_recovers()
+    test_colour_stands_in_for_a_missing_code()
+    test_supp_counts_towards_its_semester()
     print("\nall standing-code tests pass")
 
 

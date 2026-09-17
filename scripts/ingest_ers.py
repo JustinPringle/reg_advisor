@@ -124,7 +124,8 @@ def main() -> None:
     counts = ingest_path(db, args.path, args.programme, args.name, args.yaml)
     print(f"ingested {args.path} -> {args.programme}: "
           f"{counts['n_students']} students, {counts['n_results']} results, "
-          f"{counts['n_decisions']} decisions")
+          f"{counts['n_decisions']} decisions, "
+          f"{counts.get('n_colours', 0)} colours")
     skipped = counts.get("skipped", [])
     if skipped:
         access = [r for r in skipped if r.get("reason") == "access"]

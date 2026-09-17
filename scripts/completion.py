@@ -273,7 +273,7 @@ def completion_lists(cur: dict[str, Any],
                 "plan_code": b.get("plan_code", ""),
                 "completed_year": year, "completed_semester": sem,
                 "completed": (f"{year} S{sem}" + (" (supp)" if supp else "")) if per else "",
-                "gpa": round(tx["gpa"]),
+                "gpa": round(tx.get("gpa_passed", tx["gpa"])),
                 "credits_passed": round(tx["credits_passed"]),
                 "electives_ok": electives}
         if c["status"] == "DC":

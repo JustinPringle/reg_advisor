@@ -70,10 +70,23 @@ DEFAULT_RULES: dict[str, Any] = {
         "allowed_standings": ["green", "orange"],
         "rule_id": "CAC-v1",
     },
-    "credit_cap": {          # regadvisor_engine.ers_credit_cap (status or code)
-        "green": None, "orange": 48, "red": 32, "exclude": 0,
-        "ERS-ORANGE-FIRSTSEM": 48, "ERS-ORANGE-CUMUL": 48, "ERS-ORANGE-SEM": 56,
-        "ERS-RED-FIRST": 32, "ERS-RED-SECOND": 24, "ERS-EXCLUDE": 0,
+    "finalist": {            # regadvisor_engine.finalist_route -- FIN-v1
+        "enabled": True,
+        "applies_to": [],    # capstone codes; empty list disables the route
+        "coregister_sem": 2, # outstanding modules here run with the capstones
+        "special_exam": {"applies_to_sem": 1, "band": [40, 49],
+                         "requires_attempted": True},
+        "rule_id": "FIN-v1",
+    },
+    "load": {                # regadvisor_engine.probation_load_check
+        "probation_min": 56,          # MINIMUM a probation student must register
+        "probation_statuses": ["red"],
+        "completion_reduces": True,   # degree completes -> reduced, on PC sign-off
+    },
+    "credit_cap": {          # DEPRECATED -- no standing is capped; see "load"
+        "green": None, "orange": None, "red": None, "exclude": 0,
+        "ERS-ORANGE-FIRSTSEM": None, "ERS-ORANGE-CUMUL": None, "ERS-ORANGE-SEM": None,
+        "ERS-RED-FIRST": None, "ERS-RED-SECOND": None, "ERS-EXCLUDE": 0,
     },
 }
 

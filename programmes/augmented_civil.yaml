@@ -25,8 +25,12 @@
 #   1. Passing EITHER twin satisfies a downstream prerequisite — encoded with the
 #      reusable {any: [aug, main]} anchors under `_twins` below.
 #   2. FAILING an augmented module obliges the student to take the mainstream
-#      twin (different credits/notional hours). That enforcement is advisor logic
-#      (a later step); the `equivalences` block is the data it reads.
+#      twin (different credits/notional hours). The augmented section is not
+#      re-offered, so this is an obligation, not an option.
+#      CONFIRMED (Justin Pringle 2026-09-15). Enforced in
+#      datasource_sqlite.reroute(), which routes on the failure itself rather
+#      than on evidence the student has already sat the twin. The
+#      `equivalences` block is the data it reads.
 #
 # LEVEL derives from the module CODE (ENCV2SA -> 2), not the `year` field, so
 # progression gates are correct regardless of year numbering. `year` is a display
@@ -472,11 +476,40 @@ modules:
 #
 #   A1  RESOLVED: standalone programme (own file, own Level 2-4).
 #
-#   A1b Level 2-4 term placement follows the natural +1 mapping (mainstream
-#       L2->Y3, L3->Y4, L4->Y5). The augmented Years 3-5 handbook was not
-#       supplied; confirm the term-by-term layout. NOTE: `year` is cosmetic —
-#       prereq CHECKING is unaffected — but three min_year floors were bumped +1
-#       (ENCV3TT, ENPD7PP, ENPD7CL) to stay fail-safe on the 5-year calendar.
+#   A1b Level 2-4 term placement. THE HANDBOOK PAGES HAVE NOW ARRIVED:
+#       "AUGMENTED Civil Engineering — Module code list 2016", supplied by the
+#       College 2026-09-15. Its module lists total exactly 576 degree credits,
+#       which corroborates the catalogue_overrides above. It also confirms A3
+#       (year-long credits fall in semester 2) and A5 (ENCV1EP sits in Y2S2).
+#       It DISAGREES with this file in four places — see A1d..A1g below. A1g is
+#       resolved in this file's favour; the remaining three are placement, not
+#       prereq logic, so nothing here is changed until Justin signs off which
+#       document wins.
+#       NOTE: `year` is cosmetic — prereq CHECKING is unaffected — but three
+#       min_year floors were bumped +1 (ENCV3TT, ENPD7PP, ENPD7CL) to stay
+#       fail-safe on the 5-year calendar.
+#
+#   A1d Y2S1 fourth slot. This file places ENSV2SE there (A1c, from cohort
+#       evidence). The control file places the 16-credit social-studies
+#       elective there and keeps ENSV2SE in Y3S1. Both total 40.
+#
+#   A1e Y3S1 fourth slot. This file places ENCV3TT there. The control file
+#       places ENSV2SE there. Both total 56. Follows from A1d.
+#
+#   A1f ZULN101. This file models Y2S2 as "ZULN101 OR a 16-credit elective".
+#       The control file makes ZULN101 compulsory in Y2S2 AND adds a separate
+#       16-credit social-studies elective in Y2S1, noting that elective is
+#       "not taken into account in the above curriculum".
+#
+#   A1g RESOLVED (Justin Pringle 2026-09-15): ENCV3MS (Mathematical Systems)
+#       supersedes MATH360 (Numerical Methods) in Y4S2. This file is correct as
+#       it stands; the control file's MATH360 is the 2016 vintage. No change to
+#       the module list. ERS corroborates: ENCV3MS 11 augmented Civil students,
+#       MATH360 2.
+#
+#       Two known defects in the control file, so it is not automatically the
+#       winner: its Y4S2 total is printed as 72 where its own module list sums
+#       to 64, and its notes admit an 8-credit accounting problem at Y3S1.
 #
 #   A1c RESOLVED: the Year-2 "Level 2 Programme-Specific Module" is ENSV2SE
 #       (Surveying), pulled forward from Year 3. Named from the cohort — 96 of
@@ -490,16 +523,21 @@ modules:
 #       this programme" warnings and let credit totals recognise the twins.
 #       Currently the twins live only in `equivalences` / the `_twins` anchors.
 #
-#   A3  Year-long placement (D1). MATH160/161, PHYS160/163 modelled at sem 2 for
-#       credit-counting. Augmented Level 1 spans four semesters; confirm the
-#       semester count that downstream min_sem / min_credits gates should use.
+#   A3  PARTLY RESOLVED (control file, 2026-09-15): MATH160/161, PHYS160/163 are
+#       year-long and their credits fall in semester 2 — the control file prints
+#       them in the semester-2 column, and the ERS feed carries all four in
+#       block 0. This file already models them that way.
+#       STILL OPEN: augmented Level 1 spans four semesters; confirm the semester
+#       count that downstream min_sem / min_credits gates should use.
 #
 #   A4  1B carry rules (MATH161, PHYS163, MATH142) mirror mainstream (>=40 carry).
 #       Confirm they apply unchanged to augmented.
 #
-#   A5  ENCV1EP "Engineering Practice Workshop" (0-cr DP, mainstream Year 1) does
-#       not appear in the augmented handbook pages. Omitted here (module and
-#       capstone gate). Confirm where it falls for augmented students.
+#   A5  RESOLVED (control file, 2026-09-15): ENCV1EP "Engineering Practice
+#       Workshop" (0-cr DP) sits in augmented Y2S2. Corroborated by the ERS
+#       feed — 78 of 123 augmented Civil students carry it. NOT YET ADDED to
+#       the module list or the capstone gate below; that is a separate patch,
+#       held with A1d..A1g so the Year-2 layout lands in one piece.
 # ============================================================================
 
 # ── Ingest scope ──────────────────────────────────────────────────────────────

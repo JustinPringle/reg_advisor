@@ -5,6 +5,13 @@ ers_ingest.py -- read any programme's ERS export into three record lists.
     students    one row per student: bio and standing snapshot
     results     one row per module attempt
     decisions   the registrar's term-decision code per (student, period)
+    colours     the registrar's colour per (student, period) -- green/orange/red
+
+The last two are different records and are kept apart. A decision code is only
+written when something needs saying (RISK, PROB, ...), so most periods have
+none; the colour block states a standing for EVERY period, including the green
+ones. Keeping both lets a green period be read as green rather than as missing,
+and lets each cross-check the other -- 2023:2 Orange beside 2023:2 RISK.
 
 It generalises the earlier Civil-only parser. Nothing here names Civil
 Engineering: the plan code (ENG-CV, ENGEAP, ENG-ME, ...) is read straight from
@@ -25,31 +32,67 @@ import re
 import subprocess
 from pathlib import Path
 
-# A module code: four letters, a digit, then two more. Anchors a result row.
+# ---------------------------------------------------------------------------
+# What each pattern looks for in the ERS text. One line of the export, one
+# pattern. Read them beside a real export and they should be obvious.
+# ---------------------------------------------------------------------------
+
+# A module result row. Starts with a module code: four letters, a digit, two more.
+#   "ENCV4GS Ground and Structural Engineering HA 16 50 P Pass"
 MODULE_RE = re.compile(r"^[A-Z]{4}\d[A-Z0-9]{2}")
-# A student header: 9-digit number followed by a capitalised name.
+
+# The line that starts a student's record: student number, then their name.
+#   "222009802 Bisseru, Deyajal ENCV"
 STUDENT_RE = re.compile(r"\b(\d{9})\s+([A-Z][a-z]+(?:,\s*|\s+)[A-Za-z\s,]+)")
-# A programme section line: "<year> <block> <PLAN> : <name>". PLAN is any
-# uppercase token (ENG-CV, ENGEAP, ENG-ME); we no longer hard-code one.
+
+# The line that starts one study period inside a record: year, block, plan code.
+#   "2026 1 ENG-CV : Bachelor of Science in Engineering (Civil Engineering)"
+# The plan is read, never assumed, so a period taken on another plan shows up as
+# itself instead of being stamped with this programme's code.
 SECTION_RE = re.compile(r"(\d{4})\s+(S?\d+)\s+([A-Z][A-Z0-9-]{2,})\s*:")
-# The registrar's term decision, and the year it belongs to.
+
+# THE REGISTRAR'S VERDICT, in three places. All three are wanted.
+#
+# 1. This year's proposal, under a header that names the year:
+#      "Term Decision Proposals For 2026"
+#      "  Semester 1 Proposed : RSK2 : Still at risk, continue Counselling"
 DECISION_HEADER_RE = re.compile(r"Term Decision Proposals For\s+(\d{4})")
 DECISION_LINE_RE = re.compile(r"Semester\s+(\d+)\s+Proposed\s*:\s*([A-Z0-9]+)\s*:\s*(.*)")
-# A historical term decision in the per-period "Term Decision Summary":
-# "<year> <block> <plan> <DD-MON-YYYY> <CODE> : <text>".
+
+# 2. A past decision, listed in the "Term Decision Summary" at the foot of the
+#    record, one line per period that carried one:
+#      "2023 2 ENG-CV 13-DEC-2023 RISK : Performance unsatisfactory, ..."
 DECISION_HISTORY_RE = re.compile(
     r"(\d{4})\s+(S?\d+)\s+[A-Z][A-Z0-9-]{2,}\s+\d{2}-[A-Z]{3}-\d{4}\s+([A-Z0-9]+)\s*:\s*(.*)")
-# Credits earned by study period: "Summary By Study Period : 1: 72 2: 48".
+
+# 3. The Colour Codes block, last thing in the record. This is the one the
+#    summary table does NOT give us: a period in good standing carries no
+#    decision code at all, but it DOES carry a colour. Without this block a
+#    green student is indistinguishable from a student we failed to read.
+#      "Colour Codes : 2022:1  Green (Good Academic Standing)"
+#      "               2023:2  Orange (At Risk)"
+#    Only the first line carries the "Colour Codes :" label; the rest are bare,
+#    so the pattern matches the period-and-colour part wherever it appears.
+#
+#    BLUE is the fourth word the block uses -- "2021:1 Blue (Outstanding
+#    Academic Achievement)" -- and leaving it out did not read a blue period as
+#    unknown, it dropped the row entirely, so the best students were the ones
+#    the check could not see. Blue resolves to green in standing_codes.
+COLOUR_RE = re.compile(r"(\d{4}):(\d)\s+(Green|Orange|Red|Blue)\b\s*(?:\(([^)]*)\))?",
+                       re.IGNORECASE)
+
+# Credits earned per study period, one line near the foot of the record:
+#   "Summary By Study Period : 1:184  2:128  3:136  4: 80"
 SUMMARY_RE = re.compile(r"(\d+):\s*(\d+)")
-# A student-header stream code: EN + two letters (ENCV, ENME, ENEL, ENCH ...).
-# It rides on the header line after the name and names the destination stream.
-# "ENGEAP" cannot match (\b needs a boundary after two letters), so the augmented
-# access token is excluded for free.
+
+# The stream the student belongs to (ENCV, ENME, ENEL ...), which rides on the
+# header line after the name. "ENGEAP" cannot match -- \b needs a boundary after
+# two letters -- so the augmented access token is excluded for free.
 STREAM_RE = re.compile(r"\bEN[A-Z]{2}\b")
-# A student's access route: "Access : ENGEAP 2021", "Access : CT-ENG", ... . It
-# rides on the line under the header and names the programme the student was
-# admitted through. ENGEAP is the augmented access route; a mainstream feed uses
-# this to defer augmented students to their own programme rather than claim them.
+
+# How the student was admitted: "Access : ENGEAP 2021", "Access : CT-ENG".
+# A mainstream feed uses this to hand augmented students to their own programme
+# rather than claim them.
 ACCESS_RE = re.compile(r"Access\s*:\s*([A-Z0-9-]+)")
 
 
@@ -104,7 +147,7 @@ def _parse_module_line(parts: list[str]) -> Optional[dict]:
 def parse_ers(text: str, programme: str,
               keep_streams: Optional[set[str]] = None,
               exclude_access: Optional[set[str]] = None) -> dict[str, list[dict]]:
-    """ERS layout text -> {'students', 'results', 'decisions'} for one programme.
+    """ERS layout text -> {'students', 'results', 'decisions', 'colours'} for one programme.
 
     keep_streams, when given, keeps only students whose header stream set meets it
     (set intersection). A student carrying several streams (a first-year still
@@ -115,6 +158,7 @@ def parse_ers(text: str, programme: str,
     lines = [ln.rstrip() for ln in text.split("\n")]
     results: list[dict] = []
     decisions: list[dict] = []
+    colours: list[dict] = []
     students: dict[str, dict] = {}
 
     student = surname = name = None
@@ -190,6 +234,15 @@ def parse_ers(text: str, programme: str,
                               "term_text": dl.group(3).strip()})
             continue
 
+        cm = COLOUR_RE.search(line)
+        if cm:
+            colours.append({"student_number": student, "programme": programme,
+                            "calendar_year": int(cm.group(1)),
+                            "semester": int(cm.group(2)),
+                            "colour": cm.group(3).lower(),
+                            "colour_text": (cm.group(4) or "").strip()})
+            continue
+
         hx = DECISION_HISTORY_RE.search(line)
         if hx:
             decisions.append({"student_number": student, "programme": programme,
@@ -228,8 +281,8 @@ def parse_ers(text: str, programme: str,
         srec["access_code"] = student_access.get(srec["student_number"], "")
 
     if keep_streams is None and exclude_access is None:
-        return {"students": list(students.values()),
-                "results": results, "decisions": decisions, "skipped": []}
+        return {"students": list(students.values()), "results": results,
+                "decisions": decisions, "colours": colours, "skipped": []}
 
     # Two gates, both fail-safe:
     #   keep_streams   -- keep only students whose header streams meet the set
@@ -256,6 +309,7 @@ def parse_ers(text: str, programme: str,
         "students":  [s2 for s2 in students.values()    if s2["student_number"] in kept],
         "results":   [r  for r  in results               if r["student_number"] in kept],
         "decisions": [d  for d  in decisions             if d["student_number"] in kept],
+        "colours":   [c  for c  in colours                if c["student_number"] in kept],
         "skipped":   skipped}
 
 

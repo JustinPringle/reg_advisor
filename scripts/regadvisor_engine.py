@@ -286,6 +286,104 @@ def check_prereqs(mod: dict[str, Any], tx: dict[str, Any]) -> dict[str, Any]:
                            if not str(r["label"]).startswith("[review"))}
 
 
+# --- Finalist route: can this student complete the degree this year? ---------
+# Distinct from a concession. A concession asks "did you nearly pass the
+# prerequisite"; the finalist route asks "if you register the capstones now,
+# does the degree finish this year". There is no ceiling on how many modules
+# remain -- only whether each one can still be cleared, so this is a pure
+# feasibility test with no merit floor. FIN-v1.
+DEFAULT_FINALIST: dict[str, Any] = {
+    "enabled": True,
+    "applies_to": [],                 # capstone codes; empty disables the route
+    "coregister_sem": 2,              # outstanding modules in this sem run alongside
+    "special_exam": {
+        "applies_to_sem": 1,          # only sem-1 modules get the later sitting
+        "band": [40, 49],             # final mark; below the band is not eligible
+        "requires_attempted": True,   # never sat -> cannot be cleared this year
+    },
+    "rule_id": "FIN-v1",
+}
+
+_ELECTIVE_TYPES = ("free_elective", "core_elective", "elective")
+
+
+def _is_vac_work(mod: dict[str, Any]) -> bool:
+    """Vacation work is captured after the fact and never blocks a finalist."""
+    if mod.get("vac_work"):
+        return True
+    return bool(mod.get("is_dp")) and not (mod.get("credits") or 0) \
+        and "vacation" in str(mod.get("name") or "").lower()
+
+
+def completion_plan(curriculum: dict[str, Any], tx: dict[str, Any],
+                    registering: set[str] | None = None,
+                    rule: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Can this student finish the degree this year? The primitive behind both
+    the finalist route and the probation load check.
+
+    `registering` is the basket being taken now. Pass None to ask the
+    hypothetical question -- "if they registered everything available to them,
+    would the degree finish" -- which is what the advice buckets need. Pass an
+    explicit set to ask about a real registration, which is what the probation
+    check needs: a student who leaves an outstanding module off the basket does
+    not complete, however eligible they were to take it.
+
+    An outstanding module clears one of two ways: it is registered now (or
+    could be, in the hypothetical), or it is a sem-1 module already attempted
+    with a final mark inside the band, cleared at a later sitting. The later
+    sitting is NOT part of the registered load -- it is written after the
+    semester being assessed.
+    -> {completes, registered:[code], later_sitting:[{code, mark}], blocked:[code]}
+    """
+    r = {**DEFAULT_FINALIST, **(rule or {})}
+    se = {**DEFAULT_FINALIST["special_exam"], **(r.get("special_exam") or {})}
+    lo, hi = se.get("band", [40, 49])
+    taken: list[str] = []
+    later: list[dict[str, Any]] = []
+    blocked: list[str] = []
+    for m in curriculum.get("modules", []):
+        if m.get("type") in _ELECTIVE_TYPES or _is_vac_work(m):
+            continue
+        b = _best(tx, m["code"])
+        if b and b["passed"]:
+            continue
+        if registering is not None:
+            if m["code"] in registering:
+                taken.append(m["code"])
+                continue
+        elif m.get("sem") == r.get("coregister_sem"):
+            taken.append(m["code"])
+            continue
+        if m.get("sem") == se.get("applies_to_sem"):
+            mark = (b or {}).get("mark")
+            if b is not None and mark is not None and lo <= mark <= hi:
+                later.append({"code": m["code"], "mark": mark})
+                continue
+        blocked.append(m["code"])
+    return {"completes": not blocked, "registered": taken,
+            "later_sitting": later, "blocked": blocked}
+
+
+def finalist_route(curriculum: dict[str, Any], tx: dict[str, Any],
+                   mod: dict[str, Any],
+                   rule: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Whether `mod` (a capstone) may be registered on the finalist route:
+    the hypothetical completion question, restricted to the capstone codes."""
+    r = {**DEFAULT_FINALIST, **(rule or {})}
+    if not r.get("enabled"):
+        return None
+    targets = set(r.get("applies_to") or [])
+    if mod["code"] not in targets:
+        return None
+    sub = {**curriculum, "modules": [m for m in curriculum.get("modules", [])
+                                     if m["code"] not in targets]}
+    plan = completion_plan(sub, tx, None, rule)
+    if not plan["completes"]:
+        return None
+    return {"rule_id": r.get("rule_id", "FIN-v1"),
+            "coregister": plan["registered"], "later_sitting": plan["later_sitting"]}
+
+
 # --- The four-bucket advice classifier --------------------------------------
 def eval_advice(curriculum: dict[str, Any], tx: dict[str, Any],
                 concession_gpa: float | None = None, max_missing: int | None = None,
@@ -338,6 +436,9 @@ def eval_advice(curriculum: dict[str, Any], tx: dict[str, Any],
             out["can_register"].append(row)
         elif has_review:
             out["needs_review"].append(row)
+        elif (fin := finalist_route(curriculum, tx, mod,
+                                    (curriculum.get("rules") or {}).get("finalist"))):
+            out["concession_possible"].append({**row, "finalist": fin})
         elif (tx.get("gpa_passed", tx.get("gpa", 0)) >= concession_gpa
               and pc["n_unmet"] <= max_missing and carryable):
             out["concession_possible"].append(row)
@@ -406,7 +507,7 @@ def concession_evidence(curriculum: dict[str, Any], tx: dict[str, Any],
     passed = len(tx.get("passed_set", set()))
     pass_rate = passed / attempted if attempted else 0.0
     attempts = tx.get("attempts", {}).get(core_code(course_code, tx.get("core_len")), 0)
-    gpa = tx.get("gpa", 0.0)
+    gpa = tx.get("gpa_passed", tx.get("gpa", 0.0))   # WAM: passed modules only
     w_gpa = opts.get("w_gpa", 0.6)
     w_pass = opts.get("w_pass", 0.4)
     miss_pen = opts.get("miss_penalty", 12)
@@ -418,11 +519,71 @@ def concession_evidence(curriculum: dict[str, Any], tx: dict[str, Any],
             "attempts": attempts, "missing": missing, "score": score, "recommendation": rec}
 
 
-# --- ERS standing -> credit cap (his 56/48/32 table, config-driven) ----------
+# --- Probation load: a MINIMUM, not a cap -----------------------------------
+# A probation student must REGISTER at least 56 credits. This is the opposite
+# instrument to a ceiling, and the two were previously tangled in one table
+# (robot_system_logic.md §7 flags the same confusion in last year's code). No
+# standing carries a maximum: green, orange and red are all uncapped.
+#
+# One exception, confirmed by the Programme Coordinator: a student who cannot
+# reach 56 but whose registration COMPLETES THE DEGREE -- counting a later
+# sitting, which is written after the semester and so is not part of the
+# registered load -- has the requirement reduced, on the coordinator's
+# signature. A student under 56 who cannot complete is not blocked from
+# registering: they register, and the shortfall surfaces as a negative term
+# decision at the end of the semester.
+DEFAULT_LOAD: dict[str, Any] = {
+    "probation_min": 56,
+    "probation_statuses": ["red"],
+    "completion_reduces": True,
+}
+
+
+def probation_load_check(curriculum: dict[str, Any], tx: dict[str, Any],
+                         registering: set[str] | None, ers_status: str,
+                         registered_credits: float,
+                         rule: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Assess a registration basket against the probation minimum.
+    -> {applies, verdict, required, registered, reason, plan}
+
+    verdict is one of: "n/a" (not on probation), "meets", "reduced" (short of
+    the minimum but the degree completes -- needs the coordinator's signature),
+    "short" (does not meet probation; registration proceeds and the term
+    decision falls out at the end of the semester).
+    """
+    r = {**DEFAULT_LOAD, **((curriculum.get("rules") or {}).get("load") or {}), **(rule or {})}
+    need = r.get("probation_min", 56)
+    if str(ers_status).lower() not in {str(x).lower() for x in r.get("probation_statuses") or []}:
+        return {"applies": False, "verdict": "n/a", "required": None,
+                "registered": registered_credits, "reason": "not on probation", "plan": None}
+    if registered_credits >= need:
+        return {"applies": True, "verdict": "meets", "required": need,
+                "registered": registered_credits,
+                "reason": f"registered {registered_credits:.0f}cr, meets the {need}cr probation minimum",
+                "plan": None}
+    plan = completion_plan(curriculum, tx, registering,
+                           (curriculum.get("rules") or {}).get("finalist"))
+    if r.get("completion_reduces") and plan["completes"]:
+        later = ", ".join(f"{x['code']} ({x['mark']:.0f})" for x in plan["later_sitting"])
+        return {"applies": True, "verdict": "reduced", "required": need,
+                "registered": registered_credits, "plan": plan,
+                "reason": (f"registered {registered_credits:.0f}cr, under the {need}cr minimum, "
+                           f"but this completes the degree"
+                           + (f" (later sitting: {later})" if later else "")
+                           + " - needs coordinator sign-off")}
+    return {"applies": True, "verdict": "short", "required": need,
+            "registered": registered_credits, "plan": plan,
+            "reason": (f"registered {registered_credits:.0f}cr, under the {need}cr probation "
+                       f"minimum and the degree does not complete - registration proceeds, "
+                       f"expect a negative term decision")}
+
+
+# --- ERS standing -> credit cap (DEPRECATED: no standing is capped; see
+# DEFAULT_LOAD above. Retained only until every caller moves across.) --------
 DEFAULT_ERS_CREDIT_CAPS: dict[str, Any] = {
-    "green": None, "orange": 48, "red": 32, "exclude": 0,
-    "ERS-ORANGE-FIRSTSEM": 48, "ERS-ORANGE-CUMUL": 48, "ERS-ORANGE-SEM": 56,
-    "ERS-RED-FIRST": 32, "ERS-RED-SECOND": 24, "ERS-EXCLUDE": 0,
+    "green": None, "orange": None, "red": None, "exclude": 0,
+    "ERS-ORANGE-FIRSTSEM": None, "ERS-ORANGE-CUMUL": None, "ERS-ORANGE-SEM": None,
+    "ERS-RED-FIRST": None, "ERS-RED-SECOND": None, "ERS-EXCLUDE": 0,
 }
 
 

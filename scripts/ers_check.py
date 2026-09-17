@@ -36,7 +36,7 @@ from pathlib import Path
 
 import ers_engine as E
 import regadvisor_engine as R
-from standing_codes import status_of, EXCLUDE_CODES, REVIEW
+from standing_codes import status_of, status_of_colour, EXCLUDE_CODES, REVIEW
 
 # The registrar-code -> standing map lives in standing_codes -- one source of
 # truth, shared with the badge path -- so the two can never drift. status_of()
@@ -115,9 +115,46 @@ def latest_decision_by_sn(decisions: list[dict[str, Any]]) -> dict[str, dict[str
     return out
 
 
+def _int(v: Any) -> int:
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _colours_by_sn(colours: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Colour rows grouped per student, oldest period first."""
+    out: dict[str, list[dict[str, Any]]] = {}
+    for c in colours:
+        out.setdefault(str(c["student_number"]), []).append(
+            {"year": str(c.get("calendar_year") or ""), "sem": _int(c.get("semester")),
+             "colour": (c.get("colour") or "").lower()})
+    for rows in out.values():
+        rows.sort(key=lambda r: (r["year"], r["sem"]))
+    return out
+
+
+def _colour_around(rows: list[dict[str, Any]], year: str,
+                   sem: int) -> tuple[str, dict[str, Any] | None]:
+    """(colour for this period, the period before it) from one student's rows."""
+    here = next((r for r in rows if r["year"] == year and r["sem"] == sem), None)
+    before = [r for r in rows if (r["year"], r["sem"]) < (year, sem)]
+    return ((here or {}).get("colour", ""), before[-1] if before else None)
+
+
 def _run_period(decisions: list[dict[str, Any]]) -> tuple[str, int]:
     """The cycle under evaluation: the newest decision period in the file."""
     return max((_dec_key(d) for d in decisions), default=("", 0))
+
+
+_SEM_OF_BLOCK = {"1": 1, "S1": 1, "2": 2, "S2": 2, "S3": 2, "S4": 2}
+
+
+def _period_key(period: str) -> tuple[str, int]:
+    """"2025:S1" -> ("2025", 1). A supplementary block belongs to the semester
+    it supplements, the same rule the engine and the cohort picker use."""
+    year, _, block = str(period or "").rpartition(":")
+    return (year, _SEM_OF_BLOCK.get(block.strip().upper(), 0))
 
 
 def _summary(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -139,12 +176,24 @@ def _incoming_alias(code: str) -> str:
 # --- the check ---------------------------------------------------------------
 def check_student(rows: list[dict[str, Any]], registrar_code: str,
                   prior_code: str | None = None,
-                  policy: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Compare one student's ERS proposal with the engine's calculation."""
+                  policy: dict[str, Any] | None = None,
+                  registrar_colour: str | None = None,
+                  prior_colour: str | None = None,
+                  degree_complete: bool = False) -> dict[str, Any]:
+    """Compare one student's ERS standing with the engine's calculation.
+
+    The registrar states a standing two ways and both are read. A term code
+    (RISK, PROB, ...) is written only when something needs saying; the colour
+    block states a colour for every period, including the good ones. So the code
+    is used when there is one and the colour answers otherwise -- for the current
+    period and for the prior one the engine reads as its history.
+    """
     shaped = _shape_rows(rows)
     prior_code = _incoming_alias(prior_code)          # normalise before use
-    prior_status = status_of(prior_code, policy)
+    prior_status = status_of(prior_code, policy) if prior_code \
+        else status_of_colour(prior_colour or "", policy)
     hist = {"last_status": prior_status if prior_status != REVIEW else "none",
+            "degree_complete": bool(degree_complete),
             "appeals_exhausted": (registrar_code or "").upper() in EXCLUDE_CODES}
     metrics = E.derive_metrics(shaped, policy, hist)
     ers = E.classify(metrics, policy=policy)
@@ -152,12 +201,16 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
     reg_code = (registrar_code or "").upper()
     eng_status = ers["status"]
 
-    if not reg_code:
-        # No registrar proposal this cycle. Classify with the engine anyway so the
-        # student is seen; there is simply nothing to line the engine up against.
-        reg_status, verdict, direction = "none", "engine-only", "no registrar code"
+    colour = (registrar_colour or "").lower()
+    if not reg_code and not colour:
+        # Neither a code nor a colour this cycle: nothing to line the engine up
+        # against. Classify anyway so the student is seen rather than dropped.
+        reg_status, verdict, direction = "none", "engine-only", "no registrar standing"
+        source = "none"
     else:
-        reg_status = status_of(reg_code, policy)
+        source = "code" if reg_code else "colour"
+        reg_status = status_of(reg_code, policy) if reg_code \
+            else status_of_colour(colour, policy)
         if reg_status == REVIEW or eng_status == "unknown":
             verdict, direction = "review", "unclassifiable"
         elif reg_status == eng_status:
@@ -167,6 +220,8 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
             direction = ("engine stricter" if _RANK.get(eng_status, 0) > _RANK.get(reg_status, 0)
                          else "engine more lenient")
     return {"registrar_code": reg_code, "registrar_status": reg_status,
+            "registrar_colour": colour, "registrar_source": source,
+            "prior_status": hist["last_status"],
             "engine_code": ers["code"], "engine_status": eng_status,
             "engine_label": ers["label"], "verdict": verdict, "direction": direction,
             "cumulative_pct": round(metrics["cumulative"]["credit_pct_passed"] * 100),
@@ -178,12 +233,16 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
 def check_parsed(parsed: dict[str, list[dict[str, Any]]],
                  cur: dict[str, Any] | None = None,
                  policy: dict[str, Any] | None = None,
-                 roster: set[str] | None = None) -> dict[str, Any]:
+                 roster: set[str] | None = None,
+                 complete: set[str] | None = None) -> dict[str, Any]:
     """Run the check over a parsed ERS ({students, results, decisions}).
 
     `cur` is optional -- the standing check needs only results and decisions,
     not the prerequisite rules -- but when given, its policy overrides feed the
     engine so a programme with its own cut points is honoured.
+
+    `complete` is the set of students who have finished the degree, computed by
+    the caller from completion.py. Progression is not assessed for them.
 
     `roster` is the active cohort. When given, every student in it is classified,
     not only those the registrar proposed a code for this cycle: a student with
@@ -199,8 +258,41 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
     decisions = latest_two_decisions(decs)          # current-period proposals
     latest_any = latest_decision_by_sn(decs)        # newest decision, any period
     run_year, run_sem = _run_period(decs)
+    colours = _colours_by_sn(parsed.get("colours") or [])
+    codes_by_period = {(str(d["student_number"]), str(d.get("calendar_year") or ""),
+                        _int(d.get("semester"))): (d.get("term_code") or "")
+                       for d in decs}
 
-    targets = set(decisions) | (set(roster) if roster is not None else set())
+    # Anyone the registrar stated a standing for this period, plus the roster.
+    # The colour block covers the students who carry no code -- leaving them out
+    # would hide every student in good standing from the check.
+    stated = {sn for sn, rows in colours.items()
+              if any(r["year"] == str(run_year) and r["sem"] == _int(run_sem) for r in rows)}
+
+    # Every period the registrar stated ANY standing for, per student, oldest
+    # first. A student registered this cycle but not evaluated in it -- a
+    # finalist carrying one second-semester module, a readmit who sat the first
+    # semester out -- has no standing at the run period and would otherwise
+    # drop out of the report unseen. They are checked at their own last stated
+    # period instead, which is the period the engine is reading anyway.
+    stated_periods: dict[str, set[tuple[str, int]]] = {}
+    for (sn, y, sem) in codes_by_period:
+        stated_periods.setdefault(sn, set()).add((y, sem))
+    for sn, rows in colours.items():
+        for r in rows:
+            stated_periods.setdefault(sn, set()).add((r["year"], r["sem"]))
+
+    # Registered at or after the run period AND carrying a standing from an
+    # earlier one: still on the books, and there is something to check them
+    # against. A student with no stated standing anywhere has nothing to
+    # compare, and stays with the roster path that reports them engine-only.
+    active = {sn for sn, rows in by_sn.items()
+              if sn in stated_periods
+              and any((str(r.get("calendar_year") or ""),
+                       _SEM_OF_BLOCK.get(str(r.get("block") or "").strip().upper(), 0))
+                      >= (str(run_year), _int(run_sem)) for r in rows)}
+    targets = (set(decisions) | stated | active
+               | (set(roster) if roster is not None else set()))
 
     rows: list[dict[str, Any]] = []
     for sn in targets:
@@ -217,9 +309,41 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
             reg_code = ""
             prior = (latest_any.get(sn) or {}).get("term_code")
             year, sem = run_year, run_sem
-        chk = check_student(by_sn[sn], reg_code, prior, policy)
+        # The colour for this period, and the standing of the period before it.
+        # The colour block runs to the current period for every student, so the
+        # period immediately before is the right history input. It REPLACES the
+        # newest-decision fallback rather than deferring to it: a student's last
+        # code can be years old, and reading a stale RISK as this term's history
+        # holds a long-recovered student down.
+        this_colour, prev = _colour_around(colours.get(sn, []), str(year), _int(sem))
+        # No standing at the run period: fall back to the student's own last
+        # stated one rather than dropping them.
+        back = None
+        if not reg_code and not this_colour:
+            past = sorted(p for p in stated_periods.get(sn, set())
+                          if p < (str(year), _int(sem)))
+            if past:
+                back = past[-1]
+                year, sem = back
+                reg_code = codes_by_period.get((sn, year, sem), "")
+                this_colour, prev = _colour_around(colours.get(sn, []), year, sem)
+        if prev:
+            prior = codes_by_period.get((sn, prev["year"], prev["sem"]), "")
+        chk = check_student(by_sn[sn], reg_code, prior, policy,
+                            registrar_colour=this_colour,
+                            prior_colour=(prev or {}).get("colour"),
+                            degree_complete=sn in (complete or set()))
+        # A back-period check is only honest when the engine is reading that
+        # same period. If it is not, the comparison would put an old code
+        # against a newer verdict -- exactly the stale read this avoids -- so
+        # it goes to a person instead.
+        if back and _period_key(chk["period"]) != back:
+            chk = {**chk, "verdict": "review",
+                   "direction": f"no standing at {run_year}:{run_sem}; "
+                                f"last stated {back[0]}:{back[1]}"}
         rows.append({"student_number": sn, "name": name,
-                     "year": year, "semester": sem, **chk})
+                     "year": year, "semester": sem,
+                     "checked_at_run_period": back is None, **chk})
 
     # Order by what a person must action: real disagreements first, then the
     # unclassifiable, then engine-only students the engine flags (green last).
@@ -232,7 +356,7 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
 
 # --- export ------------------------------------------------------------------
 _FIELDS = ["student_number", "name", "year", "semester", "verdict", "direction",
-           "registrar_code", "registrar_status", "engine_code", "engine_status",
+           "registrar_code", "registrar_colour", "registrar_source", "registrar_status", "engine_code", "engine_status",
            "engine_label", "cumulative_pct", "semester_pct", "period"]
 
 

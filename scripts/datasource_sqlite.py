@@ -25,7 +25,7 @@ from programme_loader import load_programme
 from advise import advise_student, check_additions
 from regadvisor_engine import code_level
 import regadvisor_engine as R
-from standing_codes import status_of, EXCLUDE_CODES
+from standing_codes import status_of, status_of_colour, EXCLUDE_CODES
 
 # The registrar-code -> standing map lives in standing_codes, shared with the
 # checker so the two never drift. status_of() resolves an unrecognised code to
@@ -114,10 +114,41 @@ class SqliteSource:
         return out
 
     def _load_history(self) -> dict[str, dict[str, Any]]:
+        """Each student's standing as the registrar last stated it.
+
+        The newest COLOUR period, not the newest code. A code is written only
+        when something needs saying, so the newest one can be years old: reading
+        it as the student's standing today leaves someone flagged at risk long
+        after the registrar returned them to green. The colour block runs to the
+        current period, so its last row is the right place to look; the code for
+        that same period is used when there is one, since it says more than the
+        colour does.
+        """
         latest = self.store.latest_decisions(self.programme)
-        return {sn: {"code": h["code"], "text": h["text"],
-                     "status": status_of(h["code"], self.ers_policy)}
-                for sn, h in latest.items()}
+        colours = self.store.colour_codes(self.programme)
+        codes = {(str(d["student_number"]), f"{d['calendar_year']}:{d['semester']}"):
+                 (d.get("term_code") or "", d.get("term_text") or "")
+                 for d in self.store.decisions(self.programme)}
+
+        def period_key(p: str) -> tuple[str, int]:
+            y, _, s = p.partition(":")
+            return (y, int(s) if s.isdigit() else 0)
+
+        out: dict[str, dict[str, Any]] = {}
+        for sn, h in latest.items():                 # no colours: as before
+            out[sn] = {"code": h["code"], "text": h["text"], "period": "",
+                       "status": status_of(h["code"], self.ers_policy)}
+        for sn, periods in colours.items():
+            if not periods:
+                continue
+            last = max(periods, key=period_key)
+            code, text = codes.get((sn, last), ("", ""))
+            out[sn] = {"code": code, "text": text or periods[last]["text"],
+                       "period": last,
+                       "status": (status_of(code, self.ers_policy) if code
+                                  else status_of_colour(periods[last]["colour"],
+                                                        self.ers_policy))}
+        return out
 
     def _engine_history(self, sn: str) -> dict[str, Any]:
         h = self.history.get(sn)
@@ -229,16 +260,30 @@ class SqliteSource:
 
         def reroute(code: str) -> tuple[str, dict[str, Any] | None, str | None]:
             """A failed augmented L1 module is repeated in its mainstream twin --
-            the augmented section is not re-offered. Once the student has entered
-            the mainstream module (sat the twin), show that code, carrying the
-            best mark across the pair so the near-miss stays visible.
-            DECISION (Justin Pringle, 2026-08-26): route on twin-attempt evidence;
-            a student still in the augmented years keeps the augmented code."""
+            the augmented section is not re-offered. Show the mainstream code,
+            carrying the best mark across the pair so the near-miss stays visible.
+
+            DECISION (Justin Pringle, 2026-09-15): the handbook rule is that
+            failing an augmented module OBLIGES the student to take the
+            mainstream twin. Routing therefore fires on the failure itself, not
+            on evidence that the student has already sat the twin. This
+            supersedes the 2026-08-26 twin-attempt rule, which left a failed
+            student still showing an augmented code they cannot re-register.
+
+            Two cases deliberately do NOT route, to stay fail-safe:
+              - the augmented module has no recorded outcome yet (in progress,
+                or supplementary granted and not yet sat) -- not a fail;
+              - either twin has been passed -- nothing to repeat."""
             main = twins.get(code)
-            if not main or attempts.get(R.core_code(main, cl), 0) <= 0:
+            if not main:
                 return code, R._best(tx, code), None
             aug_b, main_b = R._best(tx, code), R._best(tx, main)
             if (aug_b and aug_b["passed"]) or (main_b and main_b["passed"]):
+                return code, R._best(tx, code), None
+            sat_twin = attempts.get(R.core_code(main, cl), 0) > 0
+            failed_aug = bool(aug_b) and aug_b.get("mark") is not None
+            if not (failed_aug or sat_twin):
+                # augmented module never sat, or sat with no result yet
                 return code, R._best(tx, code), None
             cands = [b for b in (aug_b, main_b) if b and b["mark"] is not None]
             best = max(cands, key=lambda b: b["mark"]) if cands else None

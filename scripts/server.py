@@ -369,11 +369,12 @@ class Handler(BaseHTTPRequestHandler):
                 # written to the results/decisions tables. Only the final is stored.
                 STORE.register_programme(programme, name, yaml)
                 suffix = Path(dest).suffix.lower()
-                parsed = ({"students": [], "results": [], "decisions": []}
+                parsed = ({"students": [], "results": [], "decisions": [], "colours": []}
                           if suffix == ".csv" else parse_file(str(dest), programme))
                 counts = {"n_students": len(parsed["students"]),
                           "n_results": len(parsed["results"]),
-                          "n_decisions": len(parsed["decisions"])}
+                          "n_decisions": len(parsed["decisions"]),
+                          "n_colours": len(parsed.get("colours") or [])}
         except Exception as exc:                       # never crash the server on a bad upload
             self._json({"error": f"ingest failed: {exc}"}, 400)
             return
