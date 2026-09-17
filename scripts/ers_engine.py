@@ -106,6 +106,14 @@ def build_criteria(policy: dict[str, Any]) -> list[dict[str, Any]]:
         {"code": "ERS-EXCLUDE", "status": "exclude",
          "label": "Exclude - appeals exhausted",
          "rules": [("history.appeals_exhausted", "eq", True)]},
+        # A finished degree is not a progression case. A student who has met
+        # every requirement registers whatever is left over -- 24 credits of
+        # elective, or nothing -- and measuring that against a full semester's
+        # load calls a completed student at risk. The registrar codes them DC
+        # and colours them green; so does this.
+        {"code": "ERS-COMPLETE", "status": "green",
+         "label": "Degree complete - progression no longer assessed",
+         "rules": [("history.degree_complete", "eq", True)]},
         {"code": "ERS-RED-SECOND", "status": "red",
          "label": "Severely underperforming - 2nd time (appeal)",
          "rules": [("history.below_minimum", "eq", True),
@@ -396,6 +404,9 @@ def derive_metrics(results: list[dict[str, Any]],
                     # semester. Either half short and an orange standing stands.
                     "rehabilitated": at_or_above_p75 and at_or_above_load,
                     "last_status": history.get("last_status", "none"),
+                    # Set by the caller from completion.py -- the engine does not
+                    # read the catalogue, so completeness is told to it.
+                    "degree_complete": bool(history.get("degree_complete", False)),
                     "appeals_exhausted": bool(history.get("appeals_exhausted", False))},
         "thresholds": thresholds_for(len(main_periods), policy),
         "periods": order,

@@ -147,6 +147,16 @@ def _run_period(decisions: list[dict[str, Any]]) -> tuple[str, int]:
     return max((_dec_key(d) for d in decisions), default=("", 0))
 
 
+_SEM_OF_BLOCK = {"1": 1, "S1": 1, "2": 2, "S2": 2, "S3": 2, "S4": 2}
+
+
+def _period_key(period: str) -> tuple[str, int]:
+    """"2025:S1" -> ("2025", 1). A supplementary block belongs to the semester
+    it supplements, the same rule the engine and the cohort picker use."""
+    year, _, block = str(period or "").rpartition(":")
+    return (year, _SEM_OF_BLOCK.get(block.strip().upper(), 0))
+
+
 def _summary(rows: list[dict[str, Any]]) -> dict[str, int]:
     from collections import Counter
     c = Counter(r["verdict"] for r in rows)
@@ -168,7 +178,8 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
                   prior_code: str | None = None,
                   policy: dict[str, Any] | None = None,
                   registrar_colour: str | None = None,
-                  prior_colour: str | None = None) -> dict[str, Any]:
+                  prior_colour: str | None = None,
+                  degree_complete: bool = False) -> dict[str, Any]:
     """Compare one student's ERS standing with the engine's calculation.
 
     The registrar states a standing two ways and both are read. A term code
@@ -182,6 +193,7 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
     prior_status = status_of(prior_code, policy) if prior_code \
         else status_of_colour(prior_colour or "", policy)
     hist = {"last_status": prior_status if prior_status != REVIEW else "none",
+            "degree_complete": bool(degree_complete),
             "appeals_exhausted": (registrar_code or "").upper() in EXCLUDE_CODES}
     metrics = E.derive_metrics(shaped, policy, hist)
     ers = E.classify(metrics, policy=policy)
@@ -221,12 +233,16 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
 def check_parsed(parsed: dict[str, list[dict[str, Any]]],
                  cur: dict[str, Any] | None = None,
                  policy: dict[str, Any] | None = None,
-                 roster: set[str] | None = None) -> dict[str, Any]:
+                 roster: set[str] | None = None,
+                 complete: set[str] | None = None) -> dict[str, Any]:
     """Run the check over a parsed ERS ({students, results, decisions}).
 
     `cur` is optional -- the standing check needs only results and decisions,
     not the prerequisite rules -- but when given, its policy overrides feed the
     engine so a programme with its own cut points is honoured.
+
+    `complete` is the set of students who have finished the degree, computed by
+    the caller from completion.py. Progression is not assessed for them.
 
     `roster` is the active cohort. When given, every student in it is classified,
     not only those the registrar proposed a code for this cycle: a student with
@@ -252,7 +268,31 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
     # would hide every student in good standing from the check.
     stated = {sn for sn, rows in colours.items()
               if any(r["year"] == str(run_year) and r["sem"] == _int(run_sem) for r in rows)}
-    targets = set(decisions) | stated | (set(roster) if roster is not None else set())
+
+    # Every period the registrar stated ANY standing for, per student, oldest
+    # first. A student registered this cycle but not evaluated in it -- a
+    # finalist carrying one second-semester module, a readmit who sat the first
+    # semester out -- has no standing at the run period and would otherwise
+    # drop out of the report unseen. They are checked at their own last stated
+    # period instead, which is the period the engine is reading anyway.
+    stated_periods: dict[str, set[tuple[str, int]]] = {}
+    for (sn, y, sem) in codes_by_period:
+        stated_periods.setdefault(sn, set()).add((y, sem))
+    for sn, rows in colours.items():
+        for r in rows:
+            stated_periods.setdefault(sn, set()).add((r["year"], r["sem"]))
+
+    # Registered at or after the run period AND carrying a standing from an
+    # earlier one: still on the books, and there is something to check them
+    # against. A student with no stated standing anywhere has nothing to
+    # compare, and stays with the roster path that reports them engine-only.
+    active = {sn for sn, rows in by_sn.items()
+              if sn in stated_periods
+              and any((str(r.get("calendar_year") or ""),
+                       _SEM_OF_BLOCK.get(str(r.get("block") or "").strip().upper(), 0))
+                      >= (str(run_year), _int(run_sem)) for r in rows)}
+    targets = (set(decisions) | stated | active
+               | (set(roster) if roster is not None else set()))
 
     rows: list[dict[str, Any]] = []
     for sn in targets:
@@ -276,13 +316,34 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
         # code can be years old, and reading a stale RISK as this term's history
         # holds a long-recovered student down.
         this_colour, prev = _colour_around(colours.get(sn, []), str(year), _int(sem))
+        # No standing at the run period: fall back to the student's own last
+        # stated one rather than dropping them.
+        back = None
+        if not reg_code and not this_colour:
+            past = sorted(p for p in stated_periods.get(sn, set())
+                          if p < (str(year), _int(sem)))
+            if past:
+                back = past[-1]
+                year, sem = back
+                reg_code = codes_by_period.get((sn, year, sem), "")
+                this_colour, prev = _colour_around(colours.get(sn, []), year, sem)
         if prev:
             prior = codes_by_period.get((sn, prev["year"], prev["sem"]), "")
         chk = check_student(by_sn[sn], reg_code, prior, policy,
                             registrar_colour=this_colour,
-                            prior_colour=(prev or {}).get("colour"))
+                            prior_colour=(prev or {}).get("colour"),
+                            degree_complete=sn in (complete or set()))
+        # A back-period check is only honest when the engine is reading that
+        # same period. If it is not, the comparison would put an old code
+        # against a newer verdict -- exactly the stale read this avoids -- so
+        # it goes to a person instead.
+        if back and _period_key(chk["period"]) != back:
+            chk = {**chk, "verdict": "review",
+                   "direction": f"no standing at {run_year}:{run_sem}; "
+                                f"last stated {back[0]}:{back[1]}"}
         rows.append({"student_number": sn, "name": name,
-                     "year": year, "semester": sem, **chk})
+                     "year": year, "semester": sem,
+                     "checked_at_run_period": back is None, **chk})
 
     # Order by what a person must action: real disagreements first, then the
     # unclassifiable, then engine-only students the engine flags (green last).

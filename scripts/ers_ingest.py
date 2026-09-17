@@ -73,7 +73,12 @@ DECISION_HISTORY_RE = re.compile(
 #      "               2023:2  Orange (At Risk)"
 #    Only the first line carries the "Colour Codes :" label; the rest are bare,
 #    so the pattern matches the period-and-colour part wherever it appears.
-COLOUR_RE = re.compile(r"(\d{4}):(\d)\s+(Green|Orange|Red)\b\s*(?:\(([^)]*)\))?",
+#
+#    BLUE is the fourth word the block uses -- "2021:1 Blue (Outstanding
+#    Academic Achievement)" -- and leaving it out did not read a blue period as
+#    unknown, it dropped the row entirely, so the best students were the ones
+#    the check could not see. Blue resolves to green in standing_codes.
+COLOUR_RE = re.compile(r"(\d{4}):(\d)\s+(Green|Orange|Red|Blue)\b\s*(?:\(([^)]*)\))?",
                        re.IGNORECASE)
 
 # Credits earned per study period, one line near the foot of the record:

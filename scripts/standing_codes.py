@@ -59,8 +59,11 @@ EXCLUDE_CODES = {"XNFA", "XACA", "XAC"}
 # "Orange (At Risk)" -- and it is the only place a good period is stated at all,
 # since a code is written only when something needs saying. Same fail-safe rule:
 # a word in neither map resolves to REVIEW.
+# Blue is the colour block's word for outstanding achievement -- the Dean's
+# Commendation periods. It is a BETTER standing than green, not a separate risk
+# level, and the engine has no blue leaf, so it resolves to green.
 DEFAULT_STATUS_OF_COLOUR: dict[str, str] = {
-    "GREEN": "green", "ORANGE": "orange", "RED": "red",
+    "GREEN": "green", "ORANGE": "orange", "RED": "red", "BLUE": "green",
 }
 
 

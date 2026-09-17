@@ -44,6 +44,21 @@ def results_by_sn(store: Any, programme: str) -> dict[str, list[dict[str, Any]]]
     return store.results(programme)
 
 
+def _complete_set(store: Any, programme: str,
+                  cur: dict[str, Any] | None) -> set[str]:
+    """Students who have finished the degree, by the same completion rule the
+    Completion tab uses -- one definition, read twice, so the two tabs cannot
+    disagree. DGOR (all academic requirements met, vacation work outstanding) is
+    included: progression is no longer being assessed for them either. Empty
+    when the programme has no rule file, which leaves the check as it was.
+    """
+    if cur is None:
+        return set()
+    bio = {r["student_number"]: r for r in store.students(programme)}
+    lists = C.completion_lists(cur, store.results(programme), bio)
+    return {str(r["student_number"]) for r in lists["DC"] + lists["DGOR"]}
+
+
 def _load_cur(store: Any, programme: str) -> dict[str, Any] | None:
     meta = store.programme(programme) or {}
     yaml_path = meta.get("yaml_path")
@@ -112,7 +127,8 @@ def ers_check(store: Any, programme: str, source: str = "final",
     # defaults, which have no progression table -- it will answer, and the
     # answers will be wrong. Say so rather than let a silent fallback be read as
     # a cohort full of disagreements.
-    report = X.check_parsed(parsed, cur, roster=only)
+    report = X.check_parsed(parsed, cur, roster=only,
+                            complete=_complete_set(store, programme, cur))
     report["rules_ready"] = cur is not None
     if cur is None:
         report["warning"] = (f"No rule file loaded for {programme}: the check ran on "
@@ -176,13 +192,16 @@ def student_detail(store: Any, programme: str, sn: str,
                       if str(d.get("calendar_year")) == prev["year"]
                       and X._int(d.get("semester")) == prev["sem"]), "")
     policy = ((cur or {}).get("rules") or {}).get("ers")
+    complete = sn in _complete_set(store, programme, cur)
     chk = X.check_student(rows, reg, prior, policy,
                           registrar_colour=colour,
-                          prior_colour=(prev or {}).get("colour"))
+                          prior_colour=(prev or {}).get("colour"),
+                          degree_complete=complete)
 
     # Credit totals as the engine counts them (best attempt per course).
     shaped = X._shape_rows(rows)
-    hist = {"last_status": chk["prior_status"], "appeals_exhausted": False}
+    hist = {"last_status": chk["prior_status"], "degree_complete": complete,
+            "appeals_exhausted": False}
     full = E.derive_metrics(shaped, policy, hist)
     metrics = full["cumulative"]
     # Every criterion in order, not just the one that fired: the path the
