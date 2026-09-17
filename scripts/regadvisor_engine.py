@@ -307,12 +307,25 @@ DEFAULT_FINALIST: dict[str, Any] = {
 _ELECTIVE_TYPES = ("free_elective", "core_elective", "elective")
 
 
-def _is_vac_work(mod: dict[str, Any]) -> bool:
-    """Vacation work is captured after the fact and never blocks a finalist."""
+def is_practical_requirement(mod: dict[str, Any]) -> bool:
+    """A prescribed requirement carrying no credits, captured outside the exam
+    record: vacation work, and the workshop and practice courses that sit
+    beside it (ENCV1EP, ENCV2MW, ENCV3CW).
+
+    These were read as vacation work only -- the test was the word "vacation"
+    in the name -- which left a student whose sole outstanding item was a
+    workshop course looking academically incomplete. The registrar does not
+    read them that way: it codes such a student DGOR, the same as one waiting
+    on vac work. The shape is what matters, not the name: a prescribed,
+    zero-credit DP requirement. A module may still declare `vac_work: true`
+    explicitly.
+
+    One definition, read by the completion lists and the finalist plan, so the
+    two cannot disagree about what blocks a degree.
+    """
     if mod.get("vac_work"):
         return True
-    return bool(mod.get("is_dp")) and not (mod.get("credits") or 0) \
-        and "vacation" in str(mod.get("name") or "").lower()
+    return bool(mod.get("is_dp")) and not float(mod.get("credits") or 0)
 
 
 def completion_plan(curriculum: dict[str, Any], tx: dict[str, Any],
@@ -342,7 +355,7 @@ def completion_plan(curriculum: dict[str, Any], tx: dict[str, Any],
     later: list[dict[str, Any]] = []
     blocked: list[str] = []
     for m in curriculum.get("modules", []):
-        if m.get("type") in _ELECTIVE_TYPES or _is_vac_work(m):
+        if m.get("type") in _ELECTIVE_TYPES or is_practical_requirement(m):
             continue
         b = _best(tx, m["code"])
         if b and b["passed"]:
