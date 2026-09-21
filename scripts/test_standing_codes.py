@@ -142,6 +142,16 @@ def test_supp_counts_towards_its_semester() -> None:
     print("ok test_supp_counts_towards_its_semester")
 
 
+def test_annual_block_settles_with_semester_two() -> None:
+    """Block 0 holds the augmented year-long modules; they count in semester 2,
+    where the augmented progression table puts their credits."""
+    sem2 = _rows("1", "2026", "2", "ENAG160", 8, 60, "P")
+    annual = _rows("1", "2026", "0", "MATH160", 16, 45, "F")
+    assert X.check_student(sem2, "")["semester_pct"] == 100
+    assert X.check_student(sem2 + annual, "")["semester_pct"] == 33   # 8 of 24
+    print("ok test_annual_block_settles_with_semester_two")
+
+
 def test_blank_credits_filled_from_programme() -> None:
     """A credit the ERS left blank is taken from the programme; a printed one
     is never replaced."""
@@ -168,6 +178,7 @@ def main() -> None:
     test_orange_is_carried_until_cumulative_recovers()
     test_colour_stands_in_for_a_missing_code()
     test_supp_counts_towards_its_semester()
+    test_annual_block_settles_with_semester_two()
     test_blank_credits_filled_from_programme()
     print("\nall standing-code tests pass")
 

@@ -362,10 +362,12 @@ def derive_metrics(results: list[dict[str, Any]],
         Main&Supp" -- and the decision is made on the second. A module failed in
         the main block and passed in the supp has been passed for that semester,
         so the supp blocks are read with their own semester: S1 with semester 1,
-        S2/S3/S4 with semester 2.
+        S2/S3/S4 with semester 2. Block 0 -- the augmented year-long modules --
+        is settled at year end with semester 2, which is where the augmented
+        progression table counts its credits (16 in semester 1, 64 by semester 2).
         """
         year, _, sem = str(p).rpartition(":")
-        blocks = ["S1"] if sem == "1" else ["S2", "S3", "S4"]
+        blocks = ["S1"] if sem == "1" else ["0", "S2", "S3", "S4"]
         return [f"{year}:{b}" for b in blocks if f"{year}:{b}" in by_period]
 
     def period_load(p: str) -> tuple[float, float]:

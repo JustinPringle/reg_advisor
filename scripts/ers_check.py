@@ -149,7 +149,7 @@ def _run_period(decisions: list[dict[str, Any]]) -> tuple[str, int]:
     return max((_dec_key(d) for d in decisions), default=("", 0))
 
 
-_SEM_OF_BLOCK = {"1": 1, "S1": 1, "2": 2, "S2": 2, "S3": 2, "S4": 2}
+_SEM_OF_BLOCK = {"0": 2, "1": 1, "S1": 1, "2": 2, "S2": 2, "S3": 2, "S4": 2}
 
 
 def _period_key(period: str) -> tuple[str, int]:
