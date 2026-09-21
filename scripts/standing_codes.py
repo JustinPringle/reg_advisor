@@ -21,6 +21,10 @@ Pure module: standard library only.
 from __future__ import annotations
 from typing import Any
 
+# ERS block -> the semester it belongs to. A supp block belongs to the semester
+# it supplements; block 0 (augmented year-long modules) settles with semester 2.
+SEM_OF_BLOCK = {"0": 2, "1": 1, "S1": 1, "2": 2, "S2": 2, "S3": 2, "S4": 2}
+
 REVIEW = "review"   # sentinel: unmapped -> a person must classify by hand
 
 # Grounded in robot_system_logic.md sections 3-4 and the ERS term-code list.

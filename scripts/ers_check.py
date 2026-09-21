@@ -38,7 +38,7 @@ from pathlib import Path
 
 import ers_engine as E
 import regadvisor_engine as R
-from standing_codes import status_of, status_of_colour, EXCLUDE_CODES, REVIEW
+from standing_codes import status_of, status_of_colour, EXCLUDE_CODES, REVIEW, SEM_OF_BLOCK
 
 # The registrar-code -> standing map lives in standing_codes -- one source of
 # truth, shared with the badge path -- so the two can never drift. status_of()
@@ -149,7 +149,7 @@ def _run_period(decisions: list[dict[str, Any]]) -> tuple[str, int]:
     return max((_dec_key(d) for d in decisions), default=("", 0))
 
 
-_SEM_OF_BLOCK = {"0": 2, "1": 1, "S1": 1, "2": 2, "S2": 2, "S3": 2, "S4": 2}
+_SEM_OF_BLOCK = SEM_OF_BLOCK
 
 
 def _period_key(period: str) -> tuple[str, int]:
