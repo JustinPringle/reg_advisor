@@ -219,6 +219,25 @@ def load_programme(path: str, validate: bool = True, strict: bool = True,
     return cur
 
 
+def fill_missing_credits(rows: list[dict[str, Any]],
+                         cur: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Result rows with a blank credit value filled from the programme.
+
+    The ERS prints no credit value against some modules -- the four 8-credit
+    augmented foundation modules (ENCH160, ENME160, ENAG160, ENAG161) among
+    them -- and a blank read as 0 makes a passed module worth nothing. The
+    programme's own module list (overrides applied), then the catalogue, says
+    what the module is worth. A value the ERS did print is never replaced.
+    """
+    if not cur:
+        return rows
+    worth = {**{c: f.get("credits") for c, f in (cur.get("catalogue") or {}).items()},
+             **{m["code"]: m.get("credits") for m in cur.get("modules", [])}}
+    return [r if r.get("credits") is not None
+            else {**r, "credits": worth.get(str(r.get("module_code") or ""))}
+            for r in rows]
+
+
 def _normalise_module(m: dict[str, Any],
                      catalogue: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """Fill defaults and derive review_notes from the prereq tree.

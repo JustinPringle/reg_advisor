@@ -17,7 +17,7 @@ initial.
 from __future__ import annotations
 from typing import Any
 
-from programme_loader import load_programme
+from programme_loader import load_programme, fill_missing_credits
 import completion as C
 import ers_engine as E 
 import ers_check as X
@@ -104,6 +104,26 @@ def completion(store: Any, programme: str,
             "summary": {"DC": len(dc), "DGOR": len(dgor)}}
 
 
+def _source(store: Any, programme: str, source: str) -> tuple[Any, Any, str]:
+    """(rule file, parsed ERS, source) for the ERS check and the student view.
+
+    `final` reads the store, `initial` re-parses the raw run on file; parsed is
+    None when no initial run is on file. Blank credits are filled from the rule
+    file here, once, so both views count a module at the same value.
+    """
+    cur = _load_cur(store, programme)
+    if source == "initial":
+        doc = store.current_document(programme, "initial")
+        if not doc:
+            return cur, None, source
+        parsed = parse_file(doc["stored_path"], programme)
+    else:
+        source = "final"
+        parsed = store_to_parsed(store, programme)
+    parsed["results"] = fill_missing_credits(parsed["results"], cur)
+    return cur, parsed, source
+
+
 def ers_check(store: Any, programme: str, source: str = "final",
               only: set[str] | None = None) -> dict[str, Any]:
     """Compare registrar codes with the engine's, on the chosen source.
@@ -111,17 +131,11 @@ def ers_check(store: Any, programme: str, source: str = "final",
     `only` scopes the report to one cohort: pass the cycle's student numbers and
     the rows and summary cover just those students.
     """
-    cur = _load_cur(store, programme)
-    if source == "initial":
-        doc = store.current_document(programme, "initial")
-        if not doc:
-            return {"ready": False, "source": source,
-                    "error": "no initial ERS on file for this programme",
-                    "rows": [], "summary": {}}
-        parsed = parse_file(doc["stored_path"], programme)
-    else:
-        source = "final"
-        parsed = store_to_parsed(store, programme)
+    cur, parsed, source = _source(store, programme, source)
+    if parsed is None:
+        return {"ready": False, "source": source,
+                "error": "no initial ERS on file for this programme",
+                "rows": [], "summary": {}}
 
     # Without the programme's rule file the engine falls back to its built-in
     # defaults, which have no progression table -- it will answer, and the
@@ -149,16 +163,10 @@ def student_detail(store: Any, programme: str, sn: str,
     period. Same source rule as ers_check: `final` reads the store, `initial`
     re-parses the raw run.
     """
-    cur = _load_cur(store, programme)
-    if source == "initial":
-        doc = store.current_document(programme, "initial")
-        if not doc:
-            return {"ready": False, "source": source,
-                    "error": "no initial ERS on file for this programme"}
-        parsed = parse_file(doc["stored_path"], programme)
-    else:
-        source = "final"
-        parsed = store_to_parsed(store, programme)
+    cur, parsed, source = _source(store, programme, source)
+    if parsed is None:
+        return {"ready": False, "source": source,
+                "error": "no initial ERS on file for this programme"}
 
     sn = str(sn)
     rows = [r for r in parsed["results"] if str(r["student_number"]) == sn]

@@ -142,6 +142,22 @@ def test_supp_counts_towards_its_semester() -> None:
     print("ok test_supp_counts_towards_its_semester")
 
 
+def test_blank_credits_filled_from_programme() -> None:
+    """A credit the ERS left blank is taken from the programme; a printed one
+    is never replaced."""
+    from programme_loader import fill_missing_credits
+    cur = {"modules": [{"code": "ENCH160", "credits": 8},
+                       {"code": "MATH160", "credits": 16}],
+           "catalogue": {"MATH160": {"credits": 32}}}
+    rows = (_rows(code="ENCH160", credits=None)
+            + _rows(code="MATH160", credits=None)
+            + _rows(code="ENCV3XX", credits=16))
+    got = [r["credits"] for r in fill_missing_credits(rows, cur)]
+    assert got == [8, 16, 16], got         # programme value beats catalogue
+    assert fill_missing_credits(rows, None) is rows
+    print("ok test_blank_credits_filled_from_programme")
+
+
 def main() -> None:
     test_status_is_failsafe()
     test_risu_is_orange()
@@ -152,6 +168,7 @@ def main() -> None:
     test_orange_is_carried_until_cumulative_recovers()
     test_colour_stands_in_for_a_missing_code()
     test_supp_counts_towards_its_semester()
+    test_blank_credits_filled_from_programme()
     print("\nall standing-code tests pass")
 
 
