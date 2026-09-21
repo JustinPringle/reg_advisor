@@ -17,7 +17,9 @@ standing level -- green / orange / red / exclude:
     registrar CO/GREEN/BLUE -> green  engine ERS-GREEN     -> green
     registrar XNFA/XACA/XAC -> exclude engine ERS-EXCLUDE  -> exclude
 
-A row is a MATCH when the two standings agree, a MISMATCH otherwise. Every
+A row is a MATCH when the two standings agree, a MISMATCH otherwise. One code
+is compared below the standing: RISU against ERS-ORANGE-RISU, since RISU and
+RISK are both orange but advise different things. Every
 mismatch is surfaced with the engine's own reasons and exported for the manual
 pass -- nothing is auto-changed. The engine reads the PRIOR term's code as its
 history input, taken from the second-latest decision in the same ERS.
@@ -165,10 +167,9 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, int]:
             "engine_only": c.get("engine-only", 0)}
 
 
-# Incoming (prior) term codes normalised to an equivalent standing before the
-# trees read them. PROVISIONAL — returning RISU students are treated as PROB
-# (Justin, 2026-08-17, pending confirmation). Edit the value when verified.
-INCOMING_ALIASES: dict[str, str] = {"RISU": "RSK2"}
+# Incoming (prior) term codes normalised before the trees read them. A RISU
+# student sits semester 2 out and re-enters on RISK (Justin, 2026-09-18).
+INCOMING_ALIASES: dict[str, str] = {"RISU": "RISK"}
 
 def _incoming_alias(code: str) -> str:
     return INCOMING_ALIASES.get((code or "").upper(), (code or "").upper())
@@ -219,6 +220,14 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
             verdict = "mismatch"
             direction = ("engine stricter" if _RANK.get(eng_status, 0) > _RANK.get(reg_status, 0)
                          else "engine more lenient")
+        # RISU and RISK share a standing, so the standing test cannot see them
+        # differ. Where the programme authors the RISU rule, compare the code
+        # too: RISU (suspend) is the stricter advice of the two.
+        eng_risu = ers["code"] == "ERS-ORANGE-RISU"
+        if verdict == "match" and (policy or {}).get("risu") \
+                and eng_risu != (reg_code == "RISU"):
+            verdict = "mismatch"
+            direction = "engine stricter" if eng_risu else "engine more lenient"
     return {"registrar_code": reg_code, "registrar_status": reg_status,
             "registrar_colour": colour, "registrar_source": source,
             "prior_status": hist["last_status"],
@@ -227,6 +236,10 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
             "cumulative_pct": round(metrics["cumulative"]["credit_pct_passed"] * 100),
             "semester_pct": round(metrics["semester"]["credit_pct_passed"] * 100),
             "period": metrics["semester"]["period"],
+            # Guide point 1: failed every first-semester module. Coded RISK, but
+            # counselled toward RISU -- advice for a person, not a mismatch.
+            "counsel": metrics["history"]["semesters_registered"] <= 1
+                       and metrics["first_semester"]["failed_all"],
             "reasons": ers["reasons"]}
 
 
@@ -357,7 +370,7 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
 # --- export ------------------------------------------------------------------
 _FIELDS = ["student_number", "name", "year", "semester", "verdict", "direction",
            "registrar_code", "registrar_colour", "registrar_source", "registrar_status", "engine_code", "engine_status",
-           "engine_label", "cumulative_pct", "semester_pct", "period"]
+           "engine_label", "cumulative_pct", "semester_pct", "period", "counsel"]
 
 
 def export_mismatches(report: dict[str, Any], path: str,

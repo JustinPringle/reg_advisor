@@ -124,6 +124,16 @@ def build_criteria(policy: dict[str, Any]) -> list[dict[str, Any]]:
          "rules": [("history.below_minimum", "eq", True),
                    ("history.semesters_registered", "gte", 2),
                    ("history.last_status", "neq", "red")]},
+        # RISU: the School's guide for first-years after one semester. A student
+        # below the gate mark in the gate module (MATH131 < 40) who also failed
+        # another first-semester prerequisite module cannot build a viable second
+        # semester, and is advised to suspend it. Orange like RISK -- the code
+        # differs, the standing does not. Silent unless the programme authors a
+        # rules.ers.risu block.
+        {"code": "ERS-ORANGE-RISU", "status": "orange",
+         "label": "At risk - suspend second semester (RISU)",
+         "rules": [("history.semesters_registered", "lte", 1),
+                   ("first_semester.risu", "eq", True)]},
         {"code": "ERS-ORANGE-FIRSTSEM", "status": "orange",
          "label": "At risk - first-semester probation",
          "rules": [("history.below_minimum", "eq", True),
@@ -185,6 +195,7 @@ FLOW: dict[str, Any] = {
         {"from": "classify", "to": "excluded", "criterion": "ERS-EXCLUDE"},
         {"from": "classify", "to": "ceacom", "criterion": "ERS-RED-SECOND"},
         {"from": "classify", "to": "redStrict", "criterion": "ERS-RED-FIRST"},
+        {"from": "classify", "to": "orange", "criterion": "ERS-ORANGE-RISU"},
         {"from": "classify", "to": "orange", "criterion": "ERS-ORANGE-FIRSTSEM"},
         {"from": "classify", "to": "orange", "criterion": "ERS-ORANGE-CUMUL"},
         {"from": "classify", "to": "orange", "criterion": "ERS-ORANGE-SEM"},
@@ -272,6 +283,35 @@ def explain(metrics: dict[str, Any],
     return out
 
 
+# --- First-semester RISU test ----------------------------------------------
+def _first_semester(rows: list[dict[str, Any]],
+                    rule: dict[str, Any]) -> dict[str, bool]:
+    """The School's RISU guide, read against a first-year's settled first semester.
+
+    rows: the one main period plus its supps, in sitting order, so a supp result
+          replaces the main one -- the guide reads the final result.
+    rule: rules.ers.risu -- {gate: {code, below}, with_any_failed: [codes]}.
+
+    risu       gate module below the gate mark AND any listed module failed.
+               A fail carrying no mark (FA) is below any gate. A deferred module
+               (DE) is not yet a result and counts as neither; an FS is a fail
+               on record and counts, as the registrar reads it.
+    failed_all every assessed module failed. The guide's point 1: such a student
+               may still be coded RISK, but is to be counselled toward RISU.
+    """
+    final: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        final[str(r.get("course_code") or "")] = r
+    settled = {c: r for c, r in final.items() if r.get("result_code") != "DE"}
+    failed = {c for c, r in settled.items() if not r.get("passed")}
+    gate = rule.get("gate") or {}
+    g = settled.get(str(gate.get("code") or ""))
+    gate_low = (g is not None and not g.get("passed")
+                and float(g.get("mark") or 0) < float(gate.get("below") or 0))
+    risu = bool(rule) and gate_low and bool(failed & set(rule.get("with_any_failed") or []))
+    return {"risu": risu, "failed_all": bool(settled) and failed == set(settled)}
+
+
 # --- Institution mapper: raw result rows -> decision metrics ----------------
 def derive_metrics(results: list[dict[str, Any]],
                    policy: dict[str, Any] | None = None,
@@ -343,6 +383,10 @@ def derive_metrics(results: list[dict[str, Any]],
         return total, passed
 
     sem_total, sem_passed = period_load(current) if current else (0.0, 0.0)
+    first_sem = _first_semester(
+        [r for q in [current] + supp_of(current) for r in by_period[q]]
+        if current and len(main_periods) == 1 else [],
+        policy.get("risu") or {})
 
     # Cumulative: dedupe by course, best assessed attempt wins.
     best: dict[str, dict[str, Any]] = {}
@@ -408,6 +452,7 @@ def derive_metrics(results: list[dict[str, Any]],
                     # read the catalogue, so completeness is told to it.
                     "degree_complete": bool(history.get("degree_complete", False)),
                     "appeals_exhausted": bool(history.get("appeals_exhausted", False))},
+        "first_semester": first_sem,
         "thresholds": thresholds_for(len(main_periods), policy),
         "periods": order,
     }

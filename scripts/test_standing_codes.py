@@ -37,9 +37,10 @@ def test_status_is_failsafe() -> None:
 
 
 def test_risu_is_orange() -> None:
-    # RISU: orange current standing (Justin, 2026-08-18); incoming RISU aliases
-    # to RSK2 in ers_check, which also resolves orange.
+    # RISU: orange current standing (Justin, 2026-08-18); a returning RISU
+    # student re-enters on RISK (Justin, 2026-09-18), also orange.
     assert SC.status_of("RISU") == "orange"
+    assert X._incoming_alias("RISU") == "RISK"
     assert X.status_of(X._incoming_alias("RISU")) == "orange"
     print("ok test_risu_is_orange")
 

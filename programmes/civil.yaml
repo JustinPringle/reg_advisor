@@ -121,6 +121,19 @@ rules:
         10: [480, null, null]
         11: [528, null, null]
         12: [576, null, null]
+      # RISU (RISU-v1). School guide: "Implementation guide of RISU term decision
+      # to first year students, after one semester of registration", point 2.
+      # A first-year whose final MATH131 mark is below 40 AND who failed another
+      # first-semester prerequisite module is advised to suspend semester 2.
+      # with_any_failed = the Y1S1 modules that gate a Y1S2 module in the
+      # `modules` list below (CHEM181->CHEM191, ENME1DR->ENCV1ED,
+      # MATH132->MATH142, PHYS151->PHYS152); test_risu keeps the two in step.
+      # The guide also names PHYS161 and CHEM161; neither is a Civil module.
+      # Returning RISU students re-enter on RISK (ers_check.INCOMING_ALIASES).
+      risu:
+        rule_id: RISU-v1
+        gate: {code: MATH131, below: 40}
+        with_any_failed: [CHEM181, ENME1DR, MATH132, PHYS151]
   electives:              # degree elective rule (completion.py)
     # (1) one Level-4 8-credit School-of-Engineering elective, PLUS
     # (2) 24 further elective credits at any level, any college.
