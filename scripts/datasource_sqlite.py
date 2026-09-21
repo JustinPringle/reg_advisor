@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from programme_loader import load_programme
+from programme_loader import load_programme, fill_missing_credits
 from advise import advise_student, check_additions
 from regadvisor_engine import code_level
 import regadvisor_engine as R
@@ -59,7 +59,10 @@ class SqliteSource:
         self.cur = self._load_rules(meta.get("yaml_path"))
         self.advice_ready = self.cur is not None
         self.ers_policy = ((self.cur or {}).get("rules") or {}).get("ers")
-        self._raw = store.results(programme)   # raw rows, kept for transcript + names
+        # Raw rows, kept for transcript + names. Blank ERS credits are filled from
+        # the rule file, the same fill the ERS check applies.
+        self._raw = {sn: fill_missing_credits(rows, self.cur)
+                     for sn, rows in store.results(programme).items()}
         self.results = self._load_results()
         self.bio = {r["student_number"]: r for r in store.students(programme)}
         self.history = self._load_history()
