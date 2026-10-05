@@ -34,25 +34,35 @@ CSV = "../data/ers_data.csv"
 
 def advise_student(cur: dict[str, Any], rows: list[dict[str, Any]],
                    policy: dict[str, Any] | None = None,
-                   history: dict[str, Any] | None = None) -> dict[str, Any]:
+                   history: dict[str, Any] | None = None,
+                   standing: dict[str, Any] | None = None) -> dict[str, Any]:
+    """`standing` is the standing the student registers under (ers_check.standing).
+    Without one the engine classifies on `history`. `policy` defaults to the
+    programme's own rules.ers: the engine's built-in defaults carry no
+    progression table and misjudge the minimum-progression line."""
+    rules = cur.get("rules") or {}
+    policy = policy or rules.get("ers")
     tx = R.index_transcript(rows, equivalences=cur.get("equivalences"))
     metrics = E.derive_metrics(rows, policy, history)
-    ers = E.classify(metrics, policy=policy)
-    rules = cur.get("rules") or {}
-    cap = R.ers_credit_cap(ers["code"], ers["status"], caps=rules.get("credit_cap"))
+    ers = ({"status": standing["status"], "code": standing["code"],
+            "label": standing["text"], "source": standing["source"]}
+           if standing else E.classify(metrics, policy=policy))
+    cap_code = (standing.get("engine_code") or ers["code"]) if standing else ers["code"]
+    cap = R.ers_credit_cap(cap_code, ers["status"], caps=rules.get("credit_cap"))
     advice = R.eval_advice(cur, tx)
     return {"tx": tx, "metrics": metrics, "ers": ers, "cap": cap, "advice": advice}
 
 
 def check_additions(cur: dict[str, Any], rows: list[dict[str, Any]],
-                    codes: list[str], policy: dict[str, Any] | None = None) -> dict[str, Any]:
+                    codes: list[str], policy: dict[str, Any] | None = None,
+                    standing: dict[str, Any] | None = None) -> dict[str, Any]:
     """Stamp each requested module CLEARED or REVIEW with a reason.
 
     CLEARED only when: it is a catalogued prescribed module, prereqs are met,
     it is not already passed, and the term stays within the ERS credit cap.
     Everything else fails safe toward a human.
     """
-    a = advise_student(cur, rows, policy)
+    a = advise_student(cur, rows, policy, standing=standing)
     tx, advice, cap = a["tx"], a["advice"], a["cap"]
     by_code = {m["code"]: m for m in cur["modules"]}
     # Map each code to (bucket, advice-row) -- the row carries prereq_check.

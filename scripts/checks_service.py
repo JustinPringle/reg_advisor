@@ -179,32 +179,14 @@ def student_detail(store: Any, programme: str, sn: str,
     scols = [c for c in (parsed.get("colours") or [])
              if str(c["student_number"]) == sn]
 
-    # The engine's own view -- the same inputs the cohort check assembles, so a
-    # student opened here can never read differently from their row in the list.
-    # The run period comes from the WHOLE cohort's decisions, not this student's:
-    # a student whose last code is years old is being checked for the current
-    # period, not for the period that code belongs to.
-    run_year, run_sem = X._run_period(parsed["decisions"])
-    dd = X.latest_two_decisions(parsed["decisions"]).get(sn) or {}
-    if dd:
-        reg = (dd.get("current") or {}).get("code", "")
-        prior = (dd.get("prior") or {}).get("code")
-        year, sem = dd["current"]["year"], dd["current"]["sem"]
-    else:
-        reg, year, sem = "", run_year, run_sem
-        prior = (X.latest_decision_by_sn(parsed["decisions"]).get(sn) or {}).get("term_code")
-    colour, prev = X._colour_around(X._colours_by_sn(scols).get(sn, []),
-                                    str(year), X._int(sem))
-    if prev:
-        prior = next((d.get("term_code") or "" for d in sdecs
-                      if str(d.get("calendar_year")) == prev["year"]
-                      and X._int(d.get("semester")) == prev["sem"]), "")
+    # The engine's own view, judged at the period the cohort check judges this
+    # student -- the check's own row -- so a student opened here can never read
+    # differently from their row in the list.
     policy = ((cur or {}).get("rules") or {}).get("ers")
     complete = sn in _complete_set(store, programme, cur)
-    chk = X.check_student(rows, reg, prior, policy,
-                          registrar_colour=colour,
-                          prior_colour=(prev or {}).get("colour"),
-                          degree_complete=complete)
+    period, _ = X.judged_period(sdecs, scols, X._run_period(parsed["decisions"]))
+    chk = X.assess(rows, sdecs, scols, policy, period=period, degree_complete=complete)
+    prior = chk["prior_code"]
 
     # Credit totals as the engine counts them (best attempt per course).
     shaped = X._shape_rows(rows)
