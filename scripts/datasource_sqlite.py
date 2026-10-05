@@ -21,15 +21,13 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from programme_loader import load_programme
+from programme_loader import load_programme, fill_missing_credits
 from advise import advise_student, check_additions
-from regadvisor_engine import code_level
 import regadvisor_engine as R
-from standing_codes import status_of, status_of_colour, EXCLUDE_CODES
+import ers_check as X
+from checks_service import _complete_set
+from datasource import in_progress_now
 
-# The registrar-code -> standing map lives in standing_codes, shared with the
-# checker so the two never drift. status_of() resolves an unrecognised code to
-# "review" -- never green -- so a readmit or suspended student is never cleared.
 PASS_CODES = {"P", "PM"}
 
 # A cohort is a cycle: a calendar year and a semester. The ERS block names the
@@ -58,10 +56,21 @@ class SqliteSource:
         self.cur = self._load_rules(meta.get("yaml_path"))
         self.advice_ready = self.cur is not None
         self.ers_policy = ((self.cur or {}).get("rules") or {}).get("ers")
-        self._raw = store.results(programme)   # raw rows, kept for transcript + names
-        self.results = self._load_results()
+        # Raw rows, kept for transcript + names. Blank ERS credits are filled from
+        # the rule file, the same fill the ERS check applies.
+        self._raw = {sn: fill_missing_credits(rows, self.cur)
+                     for sn, rows in store.results(programme).items()}
+        self.results = {sn: X._shape_rows(rows) for sn, rows in self._raw.items()}
         self.bio = {r["student_number"]: r for r in store.students(programme)}
-        self.history = self._load_history()
+        # The registrar's statements, per student, for the standing below.
+        self._decs: dict[str, list[dict[str, Any]]] = {}
+        for d in store.decisions(programme):
+            self._decs.setdefault(str(d["student_number"]), []).append(d)
+        self._cols: dict[str, list[dict[str, Any]]] = {}
+        for c in store.colour_rows(programme):
+            self._cols.setdefault(str(c["student_number"]), []).append(c)
+        self._complete = _complete_set(store, programme, self.cur)
+        self._standings: dict[str, dict[str, Any]] = {}
         self._cache: dict[str, dict[str, Any]] = {}
         self.active_years = {sn: {str(r["calendar_year"]) for r in rows if r.get("calendar_year")}
                              for sn, rows in self.results.items()}
@@ -91,70 +100,26 @@ class SqliteSource:
             return None
         return load_programme(str(p))
 
-    def _load_results(self) -> dict[str, list[dict[str, Any]]]:
-        """Store rows -> engine shape, mirroring data_loaders.load_results."""
-        out: dict[str, list[dict[str, Any]]] = {}
-        for sn, rows in self._raw.items():
-            shaped = []
-            for r in rows:
-                code = (r.get("module_code") or "").strip()
-                rc = (r.get("result_code") or "").strip().upper()
-                mark = r.get("grade")
-                passed = (rc in PASS_CODES) or (not rc and mark is not None and mark >= 50)
-                shaped.append({
-                    "student_number": sn,
-                    "period": f"{r.get('calendar_year','')}:{r.get('block','')}",
-                    "calendar_year": r.get("calendar_year", ""),
-                    "block": (r.get("block") or "").strip(),
-                    "course_code": code, "result_code": rc,
-                    "credits": r.get("credits") or 0, "mark": mark, "passed": passed,
-                    "year_of_study": r.get("year_of_study") or 0,
-                    "level": code_level(code)})
-            out[sn] = shaped
-        return out
+    def standing(self, sn: str) -> dict[str, Any]:
+        """The standing this student registers under, with the ERS check's own
+        row for them as `check` -- one computation (ers_check.standing), so the
+        standing here is the one the check reported."""
+        if sn not in self._standings:
+            self._standings[sn] = X.standing(
+                self._raw.get(sn, []), self._decs.get(sn, []), self._cols.get(sn, []),
+                self.ers_policy, degree_complete=sn in self._complete)
+        return self._standings[sn]
 
-    def _load_history(self) -> dict[str, dict[str, Any]]:
-        """Each student's standing as the registrar last stated it.
+    def _official(self, sn: str) -> dict[str, Any]:
+        """What the registrar stated for the period that governs, or none."""
+        st = self.standing(sn)
+        if st["source"] != "registrar":
+            return {"code": "", "text": "", "status": "none", "period": ""}
+        return {k: st[k] for k in ("code", "text", "status", "period")}
 
-        The newest COLOUR period, not the newest code. A code is written only
-        when something needs saying, so the newest one can be years old: reading
-        it as the student's standing today leaves someone flagged at risk long
-        after the registrar returned them to green. The colour block runs to the
-        current period, so its last row is the right place to look; the code for
-        that same period is used when there is one, since it says more than the
-        colour does.
-        """
-        latest = self.store.latest_decisions(self.programme)
-        colours = self.store.colour_codes(self.programme)
-        codes = {(str(d["student_number"]), f"{d['calendar_year']}:{d['semester']}"):
-                 (d.get("term_code") or "", d.get("term_text") or "")
-                 for d in self.store.decisions(self.programme)}
-
-        def period_key(p: str) -> tuple[str, int]:
-            y, _, s = p.partition(":")
-            return (y, int(s) if s.isdigit() else 0)
-
-        out: dict[str, dict[str, Any]] = {}
-        for sn, h in latest.items():                 # no colours: as before
-            out[sn] = {"code": h["code"], "text": h["text"], "period": "",
-                       "status": status_of(h["code"], self.ers_policy)}
-        for sn, periods in colours.items():
-            if not periods:
-                continue
-            last = max(periods, key=period_key)
-            code, text = codes.get((sn, last), ("", ""))
-            out[sn] = {"code": code, "text": text or periods[last]["text"],
-                       "period": last,
-                       "status": (status_of(code, self.ers_policy) if code
-                                  else status_of_colour(periods[last]["colour"],
-                                                        self.ers_policy))}
-        return out
-
-    def _engine_history(self, sn: str) -> dict[str, Any]:
-        h = self.history.get(sn)
-        if not h:
-            return {"last_status": "none", "appeals_exhausted": False}
-        return {"last_status": h["status"], "appeals_exhausted": h["code"] in EXCLUDE_CODES}
+    def _agree(self, sn: str) -> bool | None:
+        """The ERS check's verdict for this student: same period, same inputs."""
+        return {"match": True, "mismatch": False}.get(self.standing(sn)["check"]["verdict"])
 
     # -- interface -----------------------------------------------------------
     def _advise(self, sn: str) -> dict[str, Any] | None:
@@ -162,7 +127,7 @@ class SqliteSource:
             return None
         if sn not in self._cache:
             self._cache[sn] = advise_student(
-                self.cur, self.results[sn], history=self._engine_history(sn))
+                self.cur, self.results[sn], standing=self.standing(sn))
         return self._cache[sn]
     
     def current_students(self) -> set[str]:
@@ -194,13 +159,12 @@ class SqliteSource:
                 continue
             b = self.bio.get(sn, {})
             name = f"{b.get('surname','')}, {b.get('name','')}".strip(", ")
-            official = self.history.get(sn, {}).get("status", "none")
-            a = self._advise(sn)
-            engine = a["ers"]["status"] if a else official
+            st = self.standing(sn)
             out.append({"sn": sn, "name": name,
                         "year": b.get("year_of_study"),
-                        "official": official, "engine": engine,
-                        "agree": None if official == "none" else official == engine})
+                        "official": self._official(sn)["status"],
+                        "engine": st["check"]["engine_status"],
+                        "standing": st["status"], "agree": self._agree(sn)})
         out.sort(key=lambda x: x["name"].lower())
         return out
 
@@ -236,21 +200,19 @@ class SqliteSource:
         if sn not in self.results:
             return None
         a = self._advise(sn)
-        h = self.history.get(sn, {})
+        official = self._official(sn)
         b = self.bio.get(sn, {"student_number": sn})
         bio = {"sn": sn, "surname": b.get("surname", ""), "name": b.get("name", ""),
                "year_of_study": b.get("year_of_study"), "plan_code": b.get("plan_code", "")}
         if a is None:
             # Rules not authored yet: show who they are and where they stand.
-            return {"bio": bio, "advice_ready": False,
-                    "official": {"code": h.get("code", ""), "text": h.get("text", ""),
-                                 "status": h.get("status", "none")},
+            return {"bio": bio, "advice_ready": False, "official": official,
                     "engine": None, "agree": None, "cap": None,
                     "advice": {k: [] for k in ("can_register", "concession_possible",
                                "cannot_register", "needs_review", "passed")}}
-        tx, m, ers, cap, adv = a["tx"], a["metrics"], a["ers"], a["cap"], a["advice"]
-        in_progress = sorted({r["course_code"] for r in self.results[sn]
-                              if not r["result_code"] and r["mark"] is None and r["course_code"]})
+        tx, cap, adv = a["tx"], a["cap"], a["advice"]
+        chk = self.standing(sn)["check"]
+        in_progress = in_progress_now(self.results[sn], self.current_year)
 
         twins = (self.cur or {}).get("twins") or {}
         attempts = tx.get("attempts", {})
@@ -317,13 +279,16 @@ class SqliteSource:
                     "semesters": tx["semesters_registered"], "in_progress": in_progress},
             "transcript": self._transcript(sn),
             "advice_ready": True,
-            "official": {"code": h.get("code", ""), "text": h.get("text", ""),
-                         "status": h.get("status", "none")},
-            "engine": {"status": ers["status"], "code": ers["code"], "label": ers["label"],
-                       "cumulative_pct": round(m["cumulative"]["credit_pct_passed"] * 100),
-                       "semester_pct": round(m["semester"]["credit_pct_passed"] * 100),
-                       "period": m["semester"]["period"]},
-            "agree": None if h.get("status", "none") == "none" else h["status"] == ers["status"],
+            "official": official,
+            # The ERS check's own row for this student -- the cross-check.
+            "engine": {"status": chk["engine_status"], "code": chk["engine_code"],
+                       "label": chk["engine_label"],
+                       "cumulative_pct": chk["cumulative_pct"],
+                       "semester_pct": chk["semester_pct"], "period": chk["period"]},
+            # What the cap and probation load are read from: the registrar's
+            # standing where stated, the engine's where not.
+            "standing": {k: a["ers"][k] for k in ("status", "code", "label", "source")},
+            "agree": self._agree(sn),
             "cap": cap,
             "advice": {k: slim(adv[k]) for k in
                        ("can_register", "concession_possible", "cannot_register",
@@ -333,4 +298,5 @@ class SqliteSource:
     def check(self, sn: str, codes: list[str]) -> dict[str, Any] | None:
         if sn not in self.results or not self.advice_ready:
             return None
-        return check_additions(self.cur, self.results[sn], codes, policy=None)
+        return check_additions(self.cur, self.results[sn], codes,
+                               standing=self.standing(sn))

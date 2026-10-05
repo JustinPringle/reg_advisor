@@ -17,7 +17,9 @@ standing level -- green / orange / red / exclude:
     registrar CO/GREEN/BLUE -> green  engine ERS-GREEN     -> green
     registrar XNFA/XACA/XAC -> exclude engine ERS-EXCLUDE  -> exclude
 
-A row is a MATCH when the two standings agree, a MISMATCH otherwise. Every
+A row is a MATCH when the two standings agree, a MISMATCH otherwise. One code
+is compared below the standing: RISU against ERS-ORANGE-RISU, since RISU and
+RISK are both orange but advise different things. Every
 mismatch is surfaced with the engine's own reasons and exported for the manual
 pass -- nothing is auto-changed. The engine reads the PRIOR term's code as its
 history input, taken from the second-latest decision in the same ERS.
@@ -36,7 +38,7 @@ from pathlib import Path
 
 import ers_engine as E
 import regadvisor_engine as R
-from standing_codes import status_of, status_of_colour, EXCLUDE_CODES, REVIEW
+from standing_codes import status_of, status_of_colour, EXCLUDE_CODES, REVIEW, SEM_OF_BLOCK
 
 # The registrar-code -> standing map lives in standing_codes -- one source of
 # truth, shared with the badge path -- so the two can never drift. status_of()
@@ -104,17 +106,6 @@ def _dec_key(d: dict[str, Any]) -> tuple[str, int]:
     return (str(d.get("calendar_year") or ""), int(d.get("semester") or 0))
 
 
-def latest_decision_by_sn(decisions: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Each student's newest decision, whatever its period -- the history input
-    for a student the current run did not propose a code for."""
-    out: dict[str, dict[str, Any]] = {}
-    for d in decisions:
-        sn = str(d["student_number"])
-        if sn not in out or _dec_key(d) > _dec_key(out[sn]):
-            out[sn] = d
-    return out
-
-
 def _int(v: Any) -> int:
     try:
         return int(float(v))
@@ -147,7 +138,7 @@ def _run_period(decisions: list[dict[str, Any]]) -> tuple[str, int]:
     return max((_dec_key(d) for d in decisions), default=("", 0))
 
 
-_SEM_OF_BLOCK = {"1": 1, "S1": 1, "2": 2, "S2": 2, "S3": 2, "S4": 2}
+_SEM_OF_BLOCK = SEM_OF_BLOCK
 
 
 def _period_key(period: str) -> tuple[str, int]:
@@ -165,10 +156,9 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, int]:
             "engine_only": c.get("engine-only", 0)}
 
 
-# Incoming (prior) term codes normalised to an equivalent standing before the
-# trees read them. PROVISIONAL — returning RISU students are treated as PROB
-# (Justin, 2026-08-17, pending confirmation). Edit the value when verified.
-INCOMING_ALIASES: dict[str, str] = {"RISU": "RSK2"}
+# Incoming (prior) term codes normalised before the trees read them. A RISU
+# student sits semester 2 out and re-enters on RISK (Justin, 2026-09-18).
+INCOMING_ALIASES: dict[str, str] = {"RISU": "RISK"}
 
 def _incoming_alias(code: str) -> str:
     return INCOMING_ALIASES.get((code or "").upper(), (code or "").upper())
@@ -219,6 +209,14 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
             verdict = "mismatch"
             direction = ("engine stricter" if _RANK.get(eng_status, 0) > _RANK.get(reg_status, 0)
                          else "engine more lenient")
+        # RISU and RISK share a standing, so the standing test cannot see them
+        # differ. Where the programme authors the RISU rule, compare the code
+        # too: RISU (suspend) is the stricter advice of the two.
+        eng_risu = ers["code"] == "ERS-ORANGE-RISU"
+        if verdict == "match" and (policy or {}).get("risu") \
+                and eng_risu != (reg_code == "RISU"):
+            verdict = "mismatch"
+            direction = "engine stricter" if eng_risu else "engine more lenient"
     return {"registrar_code": reg_code, "registrar_status": reg_status,
             "registrar_colour": colour, "registrar_source": source,
             "prior_status": hist["last_status"],
@@ -227,7 +225,117 @@ def check_student(rows: list[dict[str, Any]], registrar_code: str,
             "cumulative_pct": round(metrics["cumulative"]["credit_pct_passed"] * 100),
             "semester_pct": round(metrics["semester"]["credit_pct_passed"] * 100),
             "period": metrics["semester"]["period"],
+            # Guide point 1: failed every first-semester module. Coded RISK, but
+            # counselled toward RISU -- advice for a person, not a mismatch.
+            "counsel": metrics["history"]["semesters_registered"] <= 1
+                       and metrics["first_semester"]["failed_all"],
             "reasons": ers["reasons"]}
+
+
+def group_by_sn(parsed: dict[str, list[dict[str, Any]]]
+                ) -> dict[str, tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]]:
+    """{sn: (results, decisions, colours)} -- one student's slice of a parse."""
+    out: dict[str, tuple[list, list, list]] = {}
+    for i, key in enumerate(("results", "decisions", "colours")):
+        for r in parsed.get(key) or []:
+            out.setdefault(str(r["student_number"]), ([], [], []))[i].append(r)
+    return out
+
+
+def assess(rows: list[dict[str, Any]], decisions: list[dict[str, Any]],
+           colours: list[dict[str, Any]], policy: dict[str, Any] | None = None,
+           *, period: tuple[str, int] | None = None,
+           degree_complete: bool = False) -> dict[str, Any]:
+    """One student's standing at one period: the registrar's beside the engine's.
+
+    The ONE place the engine's inputs are chosen. The ERS check, the student
+    detail and the advisor all call it, so none can read a student differently.
+
+    period   (year, semester) to judge. None = the period the engine reads, the
+             newest main semester with a result.
+    prior    the registrar's standing for the period BEFORE `period` -- the code
+             there, else its colour; with no colour rows, the newest code before
+             `period`. Never the judged period's own standing: that is the
+             answer, not an input.
+    """
+    if period is None:
+        period = _period_key(E.derive_metrics(_shape_rows(rows), policy)["semester"]["period"])
+    year, sem = str(period[0]), _int(period[1])
+    codes = {(str(d.get("calendar_year") or ""), _int(d.get("semester"))):
+             (d.get("term_code") or "") for d in decisions}
+    mine = next(iter(_colours_by_sn(colours).values()), [])   # one student's rows
+    colour, prev = _colour_around(mine, year, sem)
+    if prev:
+        prior = codes.get((prev["year"], prev["sem"]), "")
+    else:
+        before = [k for k in codes if k < (year, sem)]
+        prior = codes[max(before)] if before else None
+    chk = check_student(rows, codes.get((year, sem), ""), prior, policy,
+                        registrar_colour=colour,
+                        prior_colour=(prev or {}).get("colour"),
+                        degree_complete=degree_complete)
+    return {**chk, "year": year, "semester": sem, "prior_code": prior or ""}
+
+
+def judged_period(decisions: list[dict[str, Any]], colours: list[dict[str, Any]],
+                  run: tuple[str, int]) -> tuple[tuple[str, int], bool]:
+    """The period the ERS check judges one student at, and whether it fell back.
+
+    The run period, when the registrar stated a standing there. Otherwise the
+    student's own last stated period -- a finalist carrying one second-semester
+    module, a readmit who sat the first semester out -- rather than dropping
+    them from the report unseen.
+    """
+    run = (str(run[0]), _int(run[1]))
+    stated = ({(str(d.get("calendar_year") or ""), _int(d.get("semester"))) for d in decisions}
+              | {(str(c.get("calendar_year") or ""), _int(c.get("semester"))) for c in colours})
+    if run in stated:
+        return run, False
+    past = sorted(p for p in stated if p < run)
+    return (past[-1], True) if past else (run, False)
+
+
+def standing(rows: list[dict[str, Any]], decisions: list[dict[str, Any]],
+             colours: list[dict[str, Any]], policy: dict[str, Any] | None = None,
+             *, degree_complete: bool = False) -> dict[str, Any]:
+    """The standing a student registers under, and the check behind it.
+
+    The registrar's decision governs registration, so where the registrar has
+    stated a standing for the period the engine judges -- or for a later one --
+    that is the standing. The engine's verdict governs only where the registrar
+    has not yet spoken (results out, ERS not yet run). Either way `check` is the
+    ERS check's own row for this student, so the cross-check a coordinator sees
+    is the one the check reported.
+
+    -> {status, code, text, period, source: "registrar" | "engine",
+        engine_code, check}
+
+    `engine_code` is the engine's finer code (ERS-RED-SECOND, ...) when it
+    agrees with the governing standing, else None: a rule keyed by engine code,
+    such as a credit cap, still applies where the engine concurs.
+    """
+    a = assess(rows, decisions, colours, policy, degree_complete=degree_complete)
+    judged = (a["year"], a["semester"])
+    stated: dict[tuple[str, int], dict[str, str]] = {}
+    for c in colours:
+        stated[(str(c.get("calendar_year") or ""), _int(c.get("semester")))] = {
+            "code": "", "text": c.get("colour_text") or "",
+            "status": status_of_colour((c.get("colour") or "").lower(), policy)}
+    for d in decisions:                      # a code says more than a colour
+        code = (d.get("term_code") or "").upper()
+        if code:
+            stated[(str(d.get("calendar_year") or ""), _int(d.get("semester")))] = {
+                "code": code, "text": d.get("term_text") or "",
+                "status": status_of(code, policy)}
+    newest = max(stated, default=None)
+    if newest is not None and newest >= judged:
+        out = {**stated[newest], "period": f"{newest[0]}:{newest[1]}", "source": "registrar"}
+    else:
+        out = {"status": a["engine_status"], "code": a["engine_code"],
+               "text": a["engine_label"], "period": f"{judged[0]}:{judged[1]}",
+               "source": "engine"}
+    return {**out, "check": a,
+            "engine_code": a["engine_code"] if a["engine_status"] == out["status"] else None}
 
 
 def check_parsed(parsed: dict[str, list[dict[str, Any]]],
@@ -255,8 +363,6 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
     for r in parsed.get("results", []):
         by_sn.setdefault(str(r["student_number"]), []).append(r)
     decs = parsed.get("decisions", [])
-    decisions = latest_two_decisions(decs)          # current-period proposals
-    latest_any = latest_decision_by_sn(decs)        # newest decision, any period
     run_year, run_sem = _run_period(decs)
     colours = _colours_by_sn(parsed.get("colours") or [])
     codes_by_period = {(str(d["student_number"]), str(d.get("calendar_year") or ""),
@@ -291,58 +397,30 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
               and any((str(r.get("calendar_year") or ""),
                        _SEM_OF_BLOCK.get(str(r.get("block") or "").strip().upper(), 0))
                       >= (str(run_year), _int(run_sem)) for r in rows)}
-    targets = (set(decisions) | stated | active
+    targets = ({str(d["student_number"]) for d in decs
+                if _dec_key(d) == (str(run_year), _int(run_sem))} | stated | active
                | (set(roster) if roster is not None else set()))
 
+    grouped = group_by_sn(parsed)
     rows: list[dict[str, Any]] = []
     for sn in targets:
         if sn not in by_sn:
             continue
         b = bio.get(sn, {})
         name = f"{b.get('surname','')}, {b.get('name','')}".strip(", ")
-        dd = decisions.get(sn)
-        if dd:
-            reg_code = dd["current"]["code"]
-            prior = (dd["prior"] or {}).get("code")
-            year, sem = dd["current"]["year"], dd["current"]["sem"]
-        else:                                        # active, no proposal this cycle
-            reg_code = ""
-            prior = (latest_any.get(sn) or {}).get("term_code")
-            year, sem = run_year, run_sem
-        # The colour for this period, and the standing of the period before it.
-        # The colour block runs to the current period for every student, so the
-        # period immediately before is the right history input. It REPLACES the
-        # newest-decision fallback rather than deferring to it: a student's last
-        # code can be years old, and reading a stale RISK as this term's history
-        # holds a long-recovered student down.
-        this_colour, prev = _colour_around(colours.get(sn, []), str(year), _int(sem))
-        # No standing at the run period: fall back to the student's own last
-        # stated one rather than dropping them.
-        back = None
-        if not reg_code and not this_colour:
-            past = sorted(p for p in stated_periods.get(sn, set())
-                          if p < (str(year), _int(sem)))
-            if past:
-                back = past[-1]
-                year, sem = back
-                reg_code = codes_by_period.get((sn, year, sem), "")
-                this_colour, prev = _colour_around(colours.get(sn, []), year, sem)
-        if prev:
-            prior = codes_by_period.get((sn, prev["year"], prev["sem"]), "")
-        chk = check_student(by_sn[sn], reg_code, prior, policy,
-                            registrar_colour=this_colour,
-                            prior_colour=(prev or {}).get("colour"),
-                            degree_complete=sn in (complete or set()))
+        _, decs_sn, cols_sn = grouped[sn]
+        (year, sem), fell_back = judged_period(decs_sn, cols_sn, (run_year, run_sem))
+        back = (year, sem) if fell_back else None
+        chk = assess(by_sn[sn], decs_sn, cols_sn, policy, period=(year, sem),
+                     degree_complete=sn in (complete or set()))
         # A back-period check is only honest when the engine is reading that
         # same period. If it is not, the comparison would put an old code
-        # against a newer verdict -- exactly the stale read this avoids -- so
-        # it goes to a person instead.
+        # against a newer verdict, so it goes to a person instead.
         if back and _period_key(chk["period"]) != back:
             chk = {**chk, "verdict": "review",
                    "direction": f"no standing at {run_year}:{run_sem}; "
                                 f"last stated {back[0]}:{back[1]}"}
         rows.append({"student_number": sn, "name": name,
-                     "year": year, "semester": sem,
                      "checked_at_run_period": back is None, **chk})
 
     # Order by what a person must action: real disagreements first, then the
@@ -357,7 +435,7 @@ def check_parsed(parsed: dict[str, list[dict[str, Any]]],
 # --- export ------------------------------------------------------------------
 _FIELDS = ["student_number", "name", "year", "semester", "verdict", "direction",
            "registrar_code", "registrar_colour", "registrar_source", "registrar_status", "engine_code", "engine_status",
-           "engine_label", "cumulative_pct", "semester_pct", "period"]
+           "engine_label", "cumulative_pct", "semester_pct", "period", "counsel"]
 
 
 def export_mismatches(report: dict[str, Any], path: str,

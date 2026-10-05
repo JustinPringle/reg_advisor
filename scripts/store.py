@@ -25,6 +25,8 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+from standing_codes import SEM_OF_BLOCK
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS programmes (
     code       TEXT PRIMARY KEY,
@@ -41,6 +43,7 @@ CREATE TABLE IF NOT EXISTS students (
     year_of_study   REAL,
     total_credits   REAL,
     updated         TEXT,
+    as_of           TEXT DEFAULT '',   -- see _as_of
     PRIMARY KEY (programme, student_number)
 );
 CREATE TABLE IF NOT EXISTS results (
@@ -57,6 +60,7 @@ CREATE TABLE IF NOT EXISTS results (
     grade           REAL,
     result_code     TEXT,
     result_text     TEXT,
+    as_of           TEXT DEFAULT '',
     PRIMARY KEY (programme, student_number, calendar_year, block, module_code, attempt)
 );
 CREATE TABLE IF NOT EXISTS term_decisions (
@@ -66,6 +70,7 @@ CREATE TABLE IF NOT EXISTS term_decisions (
     semester        INTEGER,
     term_code       TEXT,
     term_text       TEXT,
+    as_of           TEXT DEFAULT '',
     PRIMARY KEY (programme, student_number, calendar_year, semester)
 );
 -- The registrar's colour for one period: green, orange or red. Kept apart from
@@ -80,6 +85,7 @@ CREATE TABLE IF NOT EXISTS colour_codes (
     semester        INTEGER,
     colour          TEXT,          -- 'green' | 'orange' | 'red'
     colour_text     TEXT,          -- the registrar's wording, e.g. 'At Risk'
+    as_of           TEXT DEFAULT '',
     PRIMARY KEY (programme, student_number, calendar_year, semester)
 );
 CREATE TABLE IF NOT EXISTS ingests (
@@ -89,6 +95,7 @@ CREATE TABLE IF NOT EXISTS ingests (
     n_students  INTEGER,
     n_results   INTEGER,
     n_decisions INTEGER,
+    as_of       TEXT DEFAULT '',
     at          TEXT
 );
 CREATE TABLE IF NOT EXISTS documents (
@@ -113,6 +120,10 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self._lock = threading.Lock()
         self.db.executescript(SCHEMA)
+        for table in ("students", "results", "term_decisions", "colour_codes", "ingests"):
+            cols = {r[1] for r in self.db.execute(f"PRAGMA table_info({table})")}
+            if "as_of" not in cols:      # a store made before as_of existed
+                self.db.execute(f"ALTER TABLE {table} ADD COLUMN as_of TEXT DEFAULT ''")
         self.db.commit()
 
     def close(self) -> None:
@@ -169,35 +180,49 @@ class Store:
                   "n_results": len(parsed["results"]),
                   "n_decisions": len(parsed["decisions"]),
                   "n_colours": len(colours)}
+        as_of = _as_of(parsed["results"])
         with self._lock:
-            self._upsert_students(parsed["students"], now)
-            self._upsert_results(parsed["results"])
-            self._upsert_decisions(parsed["decisions"])
-            self._upsert_colours(colours)
+            self._upsert_students(parsed["students"], now, as_of)
+            self._upsert_results(parsed["results"], as_of)
+            self._upsert_decisions(parsed["decisions"], as_of)
+            self._upsert_colours(colours, as_of)
             self.db.execute(
-                "INSERT INTO ingests(programme, source, n_students, n_results, n_decisions, at)"
-                " VALUES(?,?,?,?,?,?)",
-                (prog, source, counts["n_students"], counts["n_results"], counts["n_decisions"], now))
+                "INSERT INTO ingests(programme, source, n_students, n_results, n_decisions, as_of, at)"
+                " VALUES(?,?,?,?,?,?,?)",
+                (prog, source, counts["n_students"], counts["n_results"], counts["n_decisions"],
+                 as_of, now))
             self.db.commit()
         return counts
 
-    def _upsert_students(self, rows: Iterable[dict], now: str) -> None:
+    # Students, decisions and colours are snapshots: each export restates them,
+    # and an older export restates them as they were then (a pre-appeal FPRR, a
+    # stale year of study). A row is replaced only by an export at least as
+    # recent as the one that wrote it, so ingest order does not matter.
+    def _upsert_students(self, rows: Iterable[dict], now: str, as_of: str) -> None:
         self.db.executemany(
             "INSERT INTO students(programme, student_number, surname, name, plan_code,"
-            " year_of_study, total_credits, updated) VALUES(?,?,?,?,?,?,?,?) "
+            " year_of_study, total_credits, updated, as_of) VALUES(?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(programme, student_number) DO UPDATE SET surname=excluded.surname,"
             " name=excluded.name, plan_code=excluded.plan_code,"
             " year_of_study=excluded.year_of_study, total_credits=excluded.total_credits,"
-            " updated=excluded.updated",
+            " updated=excluded.updated, as_of=excluded.as_of"
+            " WHERE excluded.as_of >= students.as_of",
             [(r["programme"], str(r["student_number"]), r.get("surname"), r.get("name"),
-              r.get("plan_code"), _num(r.get("year_of_study")), _num(r.get("total_credits")), now)
+              r.get("plan_code"), _num(r.get("year_of_study")), _num(r.get("total_credits")), now,
+              as_of)
              for r in rows])
 
-    def _upsert_results(self, rows: Iterable[dict]) -> None:
+    def _upsert_results(self, rows: Iterable[dict], as_of: str) -> None:
         # An ERS export is cumulative, so the same period+module can list more
         # than one record (an in-progress row and its later result, or a supp
         # beside the first sitting). Number them within their period so none is
         # lost. The ordering is stable across exports, so re-ingest stays idempotent.
+        #
+        # A blank row (no result code, no mark) means "registered, nothing
+        # posted as of this export". It never overwrites a posted result. A
+        # posted result is replaced only by a posted one from an export at least
+        # as recent: exports can disagree (a remark, a condoned pass), and the
+        # newer one is right. Ingest order no longer matters for results.
         seen: dict[tuple, int] = {}
         params = []
         for r in rows:
@@ -208,35 +233,41 @@ class Store:
                 r["programme"], str(r["student_number"]), str(r.get("calendar_year") or ""),
                 str(r.get("block") or ""), r.get("plan_code"), _int(r.get("study_period")),
                 r.get("module_code"), seen[key], r.get("module_name"), _num(r.get("credits")),
-                _num(r.get("grade")), r.get("result_code"), r.get("result_text")))
+                _num(r.get("grade")), r.get("result_code"), r.get("result_text"), as_of))
         self.db.executemany(
             "INSERT INTO results(programme, student_number, calendar_year, block, plan_code,"
-            " study_period, module_code, attempt, module_name, credits, grade, result_code, result_text)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            " study_period, module_code, attempt, module_name, credits, grade, result_code, result_text,"
+            " as_of) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(programme, student_number, calendar_year, block, module_code, attempt) DO UPDATE SET"
             " module_name=excluded.module_name, credits=excluded.credits, grade=excluded.grade,"
             " result_code=excluded.result_code, result_text=excluded.result_text,"
-            " plan_code=excluded.plan_code, study_period=excluded.study_period",
+            " plan_code=excluded.plan_code, study_period=excluded.study_period, as_of=excluded.as_of"
+            " WHERE (NULLIF(results.result_code, '') IS NULL AND results.grade IS NULL)"
+            " OR ((NULLIF(excluded.result_code, '') IS NOT NULL OR excluded.grade IS NOT NULL)"
+            "     AND excluded.as_of >= results.as_of)",
             params)
 
-    def _upsert_decisions(self, rows: Iterable[dict]) -> None:
+    def _upsert_decisions(self, rows: Iterable[dict], as_of: str) -> None:
         self.db.executemany(
             "INSERT INTO term_decisions(programme, student_number, calendar_year, semester,"
-            " term_code, term_text) VALUES(?,?,?,?,?,?) "
+            " term_code, term_text, as_of) VALUES(?,?,?,?,?,?,?) "
             "ON CONFLICT(programme, student_number, calendar_year, semester) DO UPDATE SET"
-            " term_code=excluded.term_code, term_text=excluded.term_text",
+            " term_code=excluded.term_code, term_text=excluded.term_text, as_of=excluded.as_of"
+            " WHERE excluded.as_of >= term_decisions.as_of",
             [(r["programme"], str(r["student_number"]), str(r.get("calendar_year") or ""),
-              _int(r.get("semester")), r.get("term_code"), r.get("term_text"))
+              _int(r.get("semester")), r.get("term_code"), r.get("term_text"), as_of)
              for r in rows])
 
-    def _upsert_colours(self, rows: Iterable[dict]) -> None:
+    def _upsert_colours(self, rows: Iterable[dict], as_of: str) -> None:
         self.db.executemany(
             "INSERT INTO colour_codes(programme, student_number, calendar_year, semester,"
-            " colour, colour_text) VALUES(?,?,?,?,?,?) "
+            " colour, colour_text, as_of) VALUES(?,?,?,?,?,?,?) "
             "ON CONFLICT(programme, student_number, calendar_year, semester) DO UPDATE SET"
-            " colour=excluded.colour, colour_text=excluded.colour_text",
+            " colour=excluded.colour, colour_text=excluded.colour_text, as_of=excluded.as_of"
+            " WHERE excluded.as_of >= colour_codes.as_of",
             [(r["programme"], str(r["student_number"]), str(r.get("calendar_year") or ""),
-              _int(r.get("semester")), (r.get("colour") or "").lower(), r.get("colour_text"))
+              _int(r.get("semester")), (r.get("colour") or "").lower(), r.get("colour_text"),
+              as_of)
              for r in rows])
 
     # -- read ----------------------------------------------------------------
@@ -360,6 +391,26 @@ class Store:
             "SELECT id, kind, filename, stored_path, at FROM documents"
             " WHERE programme=? AND kind=? AND is_current=1", (programme, kind)).fetchone()
         return dict(r) if r else None
+
+
+def _as_of(results: Iterable[dict]) -> str:
+    """How recent an export is: its latest period with a posted result, "YYYY:S".
+
+    Read from the export itself, so neither the filename nor the upload order
+    matters. An export with nothing posted is "" -- older than any other, so it
+    fills gaps but never replaces a snapshot. Text order is time order.
+
+    Only an assessed result counts: a mark and a result code. Codes without a
+    mark -- DE (deregistered), F/ (no DP), a vacation-work P -- are written
+    mid-semester, and counting them dated the July 2025 augmented export as
+    2025:2, level with January 2026.
+    """
+    posted = [(str(r.get("calendar_year") or ""),
+               SEM_OF_BLOCK.get(str(r.get("block") or "").strip().upper(), 0))
+              for r in results
+              if (r.get("result_code") or "").strip() and r.get("grade") is not None]
+    posted = [p for p in posted if p[0] and p[1]]
+    return "%s:%d" % max(posted) if posted else ""
 
 
 def _now() -> str:

@@ -37,9 +37,10 @@ def test_status_is_failsafe() -> None:
 
 
 def test_risu_is_orange() -> None:
-    # RISU: orange current standing (Justin, 2026-08-18); incoming RISU aliases
-    # to RSK2 in ers_check, which also resolves orange.
+    # RISU: orange current standing (Justin, 2026-08-18); a returning RISU
+    # student re-enters on RISK (Justin, 2026-09-18), also orange.
     assert SC.status_of("RISU") == "orange"
+    assert X._incoming_alias("RISU") == "RISK"
     assert X.status_of(X._incoming_alias("RISU")) == "orange"
     print("ok test_risu_is_orange")
 
@@ -141,6 +142,32 @@ def test_supp_counts_towards_its_semester() -> None:
     print("ok test_supp_counts_towards_its_semester")
 
 
+def test_annual_block_settles_with_semester_two() -> None:
+    """Block 0 holds the augmented year-long modules; they count in semester 2,
+    where the augmented progression table puts their credits."""
+    sem2 = _rows("1", "2026", "2", "ENAG160", 8, 60, "P")
+    annual = _rows("1", "2026", "0", "MATH160", 16, 45, "F")
+    assert X.check_student(sem2, "")["semester_pct"] == 100
+    assert X.check_student(sem2 + annual, "")["semester_pct"] == 33   # 8 of 24
+    print("ok test_annual_block_settles_with_semester_two")
+
+
+def test_blank_credits_filled_from_programme() -> None:
+    """A credit the ERS left blank is taken from the programme; a printed one
+    is never replaced."""
+    from programme_loader import fill_missing_credits
+    cur = {"modules": [{"code": "ENCH160", "credits": 8},
+                       {"code": "MATH160", "credits": 16}],
+           "catalogue": {"MATH160": {"credits": 32}}}
+    rows = (_rows(code="ENCH160", credits=None)
+            + _rows(code="MATH160", credits=None)
+            + _rows(code="ENCV3XX", credits=16))
+    got = [r["credits"] for r in fill_missing_credits(rows, cur)]
+    assert got == [8, 16, 16], got         # programme value beats catalogue
+    assert fill_missing_credits(rows, None) is rows
+    print("ok test_blank_credits_filled_from_programme")
+
+
 def main() -> None:
     test_status_is_failsafe()
     test_risu_is_orange()
@@ -151,6 +178,8 @@ def main() -> None:
     test_orange_is_carried_until_cumulative_recovers()
     test_colour_stands_in_for_a_missing_code()
     test_supp_counts_towards_its_semester()
+    test_annual_block_settles_with_semester_two()
+    test_blank_credits_filled_from_programme()
     print("\nall standing-code tests pass")
 
 

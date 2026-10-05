@@ -125,11 +125,11 @@ rules:
     rule_id: CAC-v1
   credit_cap:
     green: null
-    orange: 48
-    red: 32
+    orange: null
+    red: 56
     exclude: 0
-    ERS-ORANGE-SEM: 56
-    ERS-RED-SECOND: 24
+    ERS-ORANGE-SEM: null
+    ERS-RED-SECOND: 56
   ers:
     # Progression thresholds by semesters completed (robot_system_logic Section 3),
     # augmented stream. Row = [min_progression, normal, p75_of_normal].
