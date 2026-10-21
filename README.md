@@ -35,6 +35,10 @@ prescribed course
     otherwise                       -> blocked / review
 ```
 
+A module that clears this flow can still be held back by the timetable: if it
+meets at the same time as a lower-level module the student must take, it moves
+to **timetable clash** (see [Timetable clashes](#timetable-clashes)).
+
 Thresholds are not baked into this flow. They live in the programme's YAML file,
 so an academic owns every number and the engine stays generic.
 
@@ -56,6 +60,8 @@ so an academic owns every number and the engine stays generic.
 ```
 reg_advisor/
 ├── data/               ERS exports and the generated SQLite store (git-ignored)
+├── catalogue/          shared module facts (modules.yaml) and the lecture
+│                       timetable (timetable.yaml), both generated
 ├── programmes/         one YAML per programme: modules, prereq trees, thresholds
 │   ├── civil.yaml
 │   └── augmented_civil.yaml
@@ -71,8 +77,11 @@ reg_advisor/
 │   ├── datasource_sqlite.py    programme-scoped read interface
 │   ├── multipart.py            upload reader (cgi is gone in 3.13)
 │   ├── triage.py               splits admin vs academic queues
+│   ├── build_timetable.py      School timetable grids -> catalogue/timetable.yaml
+│   ├── clash_audit.py          CLI: current registrations that clash
 │   ├── server.py               stdlib HTTP server on :8000
 │   ├── test_engines.py         engine tests
+│   ├── test_timetable.py       timetable clash rule tests
 │   └── test_ingest.py          ingest tests, against real data
 ├── web/
 │   └── advisor.html            single-file page: picker, profile, plan, upload
@@ -134,6 +143,39 @@ ERS export ──► ers_ingest ──► store (SQLite) ──► datasource �
    provable, routine cases) and an academic queue (the judgement calls).
 5. **Page.** A single vanilla-JS page presents all of it. No build step.
 
+## Timetable clashes
+
+Programme rule (TTC-v1): a student may not register two modules that meet at
+the same time. Where two clash, the student deregisters the higher-level module
+and takes the lower-level one.
+
+The timetable is data. `build_timetable.py` reads the School's semester grids
+into `catalogue/timetable.yaml`: each module's lecture periods (Mon1 to Fri11)
+and block letter. Two modules clash when they share a period. Practicals and
+tutorials, run in rotating groups, are left out. Rebuild it whenever the School
+issues a new timetable:
+
+```
+python scripts/build_timetable.py \
+    data/timetables/<S1>.xlsx:1 data/timetables/<S2>.xlsx:2 \
+    --year 2027 --alias ENCV3GA=ENCV3G1 --out catalogue/timetable.yaml
+```
+
+Read every warning it prints: a lecture name it cannot map, or the two blocking
+sheets disagreeing, is a question for the timetabler.
+
+The rule acts in three places, all through one function
+(`regadvisor_engine.find_clashes`):
+
+- **Advice.** The higher-level module of a clash moves to *timetable clash*.
+- **COC check.** A request is tested against the other requests and against
+  the student's current registration.
+- **Cohort audit.** `python clash_audit.py --programme ENG-CIVIL [--csv]` (or
+  `GET /api/clashes`) lists every current registration that breaks the rule.
+
+`rules.timetable.exempt` in a programme file switches the rule off for named
+modules, e.g. a service module the student can attend in another stream.
+
 ## Data and privacy
 
 **Real student data never belongs in this repository.** ERS exports and the
@@ -151,6 +193,7 @@ service. Publish the code and synthetic samples only.
 cd scripts
 python test_engines.py
 python test_ingest.py
+python test_timetable.py
 ```
 
 The engine tests cover the four advice buckets, the concession gate, and the

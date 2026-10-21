@@ -53,21 +53,66 @@ def advise_student(cur: dict[str, Any], rows: list[dict[str, Any]],
     return {"tx": tx, "metrics": metrics, "ers": ers, "cap": cap, "advice": advice}
 
 
+def basket_clashes(cur: dict[str, Any], codes: list[str],
+                   registered: list[str] | None = None) -> list[dict[str, Any]]:
+    """TTC-v1 over a real basket: the modules asked for plus the ones the
+    student is already registered for. One row per dropped module, each saying
+    which module stays and whether the dropped one was asked for or is already
+    on the record (the second means an existing registration must be undone).
+
+    A module's semester is the programme's; a module the programme does not
+    carry (a repeat from another programme, say) is placed by the timetable,
+    when the timetable puts it in exactly one semester."""
+    tt, rule = R.clash_timetable(cur)
+    if not tt:
+        return []
+    sem_of = {m["code"]: m.get("sem") for m in cur.get("modules", [])}
+    held = set(registered or [])
+    by_sem: dict[int, list[str]] = {}
+    for c in list(dict.fromkeys([*codes, *(registered or [])])):
+        sem = sem_of.get(c)
+        if not isinstance(sem, int):
+            hits = [s for s, mods in (cur.get("timetable") or {}).items() if c in mods]
+            sem = hits[0] if len(hits) == 1 else None
+        if sem is not None:
+            by_sem.setdefault(sem, []).append(c)
+    out = []
+    for sem, cs in sorted(by_sem.items()):
+        res = R.find_clashes(cs, sem, tt, lambda c: R.module_level(cur, c))
+        for d in res["drop"]:
+            out.append({**d, "sem": sem, "registered": d["code"] in held,
+                        "rule_id": rule["rule_id"],
+                        "reason": R.clash_reason(d, rule["rule_id"])})
+        for t in res["ties"]:
+            tie = {"code": t["codes"][1], "with": [t["codes"][0]], "tie": True,
+                   "block": t["block"], "periods": t["periods"]}
+            out.append({**tie, "sem": sem, "registered": tie["code"] in held,
+                        "rule_id": rule["rule_id"],
+                        "reason": R.clash_reason(tie, rule["rule_id"])})
+    return out
+
+
 def check_additions(cur: dict[str, Any], rows: list[dict[str, Any]],
                     codes: list[str], policy: dict[str, Any] | None = None,
-                    standing: dict[str, Any] | None = None) -> dict[str, Any]:
+                    standing: dict[str, Any] | None = None,
+                    registered: list[str] | None = None) -> dict[str, Any]:
     """Stamp each requested module CLEARED or REVIEW with a reason.
 
     CLEARED only when: it is a catalogued prescribed module, prereqs are met,
-    it is not already passed, and the term stays within the ERS credit cap.
+    it is not already passed, the term stays within the ERS credit cap, and it
+    does not clash with a lower-level module in the basket (TTC-v1).
     Everything else fails safe toward a human.
+
+    `registered` is what the student is already registered for; a request is
+    checked for clashes against it as well as against the other requests.
     """
     a = advise_student(cur, rows, policy, standing=standing)
     tx, advice, cap = a["tx"], a["advice"], a["cap"]
     by_code = {m["code"]: m for m in cur["modules"]}
     # Map each code to (bucket, advice-row) -- the row carries prereq_check.
     row_of: dict[str, tuple[str, dict]] = {}
-    for name in ("can_register", "concession_possible", "cannot_register", "needs_review"):
+    for name in ("can_register", "concession_possible", "cannot_register", "needs_review",
+                 "timetable_clash"):
         for m in advice[name]:
             row_of[m["code"]] = (name, m)
     add_credits = sum(float(by_code[c]["credits"]) for c in codes if c in by_code)
@@ -76,6 +121,15 @@ def check_additions(cur: dict[str, Any], rows: list[dict[str, Any]],
     # property of the whole basket, so it is reported once on the result rather
     # than against any one module.
     load = R.probation_load_check(cur, tx, set(codes), a["ers"]["status"], add_credits)
+    clashes = basket_clashes(cur, codes, registered)
+    dropped = {d["code"]: d for d in clashes}
+    # A request that stays while an existing registration must go: the request
+    # stands, and the reason tells the admin what to undo.
+    undo: dict[str, list[str]] = {}
+    for d in clashes:
+        if d["registered"] and not d.get("tie"):
+            for k in d["with"]:
+                undo.setdefault(k, []).append(d["code"])
 
     out = []
     for code in codes:
@@ -90,11 +144,22 @@ def check_additions(cur: dict[str, Any], rows: list[dict[str, Any]],
             out.append({"code": code, "verdict": "REVIEW", "reason": "already passed"})
             continue
         bucket, arow = row_of.get(code, ("cannot_register", None))
-        if bucket == "can_register" and over_cap:
+        if code in dropped and bucket in ("can_register", "concession_possible",
+                                          "needs_review", "timetable_clash"):
+            out.append({"code": code, "verdict": "REVIEW", "reason": dropped[code]["reason"]})
+        elif bucket == "timetable_clash":
+            # Eligible, but a lower-level module it clashes with is still
+            # outstanding: the rule says take that one first.
+            out.append({"code": code, "verdict": "REVIEW", "reason": arow["clash"]["reason"]})
+        elif bucket == "can_register" and over_cap:
             out.append({"code": code, "verdict": "REVIEW",
                         "reason": f"prereqs met but term load {add_credits:.0f}cr exceeds {cap}cr cap ({a['ers']['code']})"})
         elif bucket == "can_register":
-            out.append({"code": code, "verdict": "CLEARED", "reason": "prereqs met, within credit cap"})
+            why = "prereqs met, within credit cap"
+            if code in undo:
+                why += (f"; deregister {', '.join(undo[code])} -- timetable clash, "
+                        f"the higher level goes [{clashes[0]['rule_id']}]")
+            out.append({"code": code, "verdict": "CLEARED", "reason": why})
         elif bucket == "concession_possible" and (arow or {}).get("finalist"):
             f = arow["finalist"]
             later = ", ".join(f"{x['code']} ({x['mark']:.0f})" for x in f["later_sitting"])
@@ -113,7 +178,7 @@ def check_additions(cur: dict[str, Any], rows: list[dict[str, Any]],
             miss = ", ".join(arow["prereq_check"]["unmet"]) if arow else "prerequisites"
             out.append({"code": code, "verdict": "REVIEW", "reason": f"blocked - missing {miss}"})
     return {"ers": a["ers"], "cap": cap, "add_credits": add_credits,
-            "load": load, "rows": out}
+            "load": load, "clashes": clashes, "rows": out}
 
 
 def sweep_programme(cur: dict[str, Any], results: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
@@ -145,9 +210,12 @@ def format_report(sn: str, a: dict[str, Any]) -> str:
          f"  Can register ({len(adv['can_register'])}): {' '.join(x['code'] for x in adv['can_register']) or '-'}",
          f"  Concession possible ({len(adv['concession_possible'])}): {' '.join(x['code'] for x in adv['concession_possible']) or '-'}",
          f"  Blocked ({len(adv['cannot_register'])}): {' '.join(x['code'] for x in adv['cannot_register']) or '-'}",
-         f"  Needs review ({len(adv['needs_review'])}): {' '.join(x['code'] for x in adv['needs_review']) or '-'}"]
+         f"  Needs review ({len(adv['needs_review'])}): {' '.join(x['code'] for x in adv['needs_review']) or '-'}",
+         f"  Timetable clash ({len(adv['timetable_clash'])}): {' '.join(x['code'] for x in adv['timetable_clash']) or '-'}"]
     for x in adv["cannot_register"][:6]:
         L.append(f"      {x['code']} <- missing {', '.join(x['prereq_check']['unmet'])}")
+    for x in adv["timetable_clash"]:
+        L.append(f"      {x['code']} <- {x['clash']['reason']}")
     return "\n".join(L)
 
 

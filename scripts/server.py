@@ -18,6 +18,8 @@ database and refreshes the picker. No student data leaves the machine.
     GET  /api/triage?programme=   the batched concession queue
     GET  /api/decisions           decisions recorded so far
     POST /api/decide              {sn, code, decision, note, by} -> record a decision
+    GET  /api/clashes?programme=&year=   current registrations that break the
+                                  timetable rule (TTC-v1): who keeps what, who drops what
     GET  /api/admin?programme=     the admin hand-off worklist
     POST /api/admin/export?programme=   write that worklist to CSV
 
@@ -269,6 +271,8 @@ class Handler(BaseHTTPRequestHandler):
                         "summary": q["summary"], "ready": True})
         elif path == "/api/decisions":
             self._json([{"sn": k[0], "code": k[1], **v} for k, v in DEC.items()])
+        elif path == "/api/clashes":
+            self._json(CHK.clash_audit(STORE, self._q("programme"), self._q("year")))
         elif path == "/api/admin":
             rows = admin_rows(self._q("programme"), self._q("year"), self._q("sem"))
             self._json({"rows": rows, "count": len(rows)})

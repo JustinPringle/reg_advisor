@@ -74,6 +74,7 @@
   .grade.pass{background:var(--green-bg);color:var(--green)}
   .carry{font-size:12px;color:var(--amber);background:var(--amber-bg);border-radius:6px;padding:1px 7px}
   .miss{font-size:12px;color:var(--red)}
+  .clash{font-size:11.5px;color:var(--amber)}
   .twin{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 6px;white-space:nowrap}
   details.transcript{margin-top:12px}
   details.transcript>summary{cursor:pointer;font-size:13px;color:var(--muted);user-select:none;list-style:none}
@@ -779,9 +780,10 @@ function decideRow(m){
 function modLine(m,opts){
   const miss=(opts.withMiss&&m.unmet&&m.unmet.length)?`<span class="miss">needs ${m.unmet.map(esc).join(", ")}</span>`:"";
   const tail=opts.decide?decideRow(m):`<span class="cr">${m.credits||0}cr</span>`;
+  const clash=m.clash?`<span class="clash">${esc(m.clash)}</span>`:"";
   const twin=m.twin_of?`<span class="twin" title="mainstream repeat of the augmented ${esc(m.twin_of)}">repeat of ${esc(m.twin_of)}</span>`:"";
   return `<div class="mod"><code>${esc(m.code)}</code><span class="mn">${esc(m.name)}</span>
-    ${twin}${opts.concession?carryPill(m):""}${miss}${gradePill(m,opts.passed)}${tail}</div>`;
+    ${twin}${opts.concession?carryPill(m):""}${miss}${clash}${gradePill(m,opts.passed)}${tail}</div>`;
 }
 function transcriptPanel(){
   const t=DETAIL.transcript||[]; if(!t.length) return "";
@@ -847,6 +849,9 @@ function render(){
     ${b.in_progress&&b.in_progress.length?`<div style="margin-top:12px;font-size:13px">
       <span style="color:var(--muted)">Currently registered:</span>
       ${b.in_progress.map(c=>`<code style="margin:0 3px">${esc(c)}</code>`).join("")}</div>`:""}
+    ${(d.registration_clashes||[]).map(c=>`<div class="flag warn">Registered for both
+      ${esc(c.with.join(", "))} and ${esc(c.code)}, which meet at the same time:
+      ${esc(c.reason)}</div>`).join("")}
     ${transcriptPanel()}
   </div>
 
@@ -874,6 +879,7 @@ function render(){
   <div class="card"><h2>Advice &amp; grades</h2>
     ${bucket("Can register","can_register","b-green",{})}
     ${bucket("Blocked","cannot_register","b-red",{withMiss:true})}
+    ${bucket("Timetable clash \u2014 take the lower level first","timetable_clash","b-orange",{})}
     ${bucket("Needs review","needs_review","b-blue",{withMiss:true})}
     ${bucket("Already passed","passed","b-gray",{passed:true})}
   </div>`;
