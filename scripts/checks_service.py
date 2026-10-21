@@ -264,3 +264,60 @@ def health(store: Any, programme: str, min_enrol: int = 10,
     bio = {r["student_number"]: r for r in store.students(programme)}
     return PH.health(cur, store.results(programme), bio,
                      min_enrol=min_enrol, window=window)
+
+def clash_audit(store: Any, programme: str, year: str = "") -> dict[str, Any]:
+    """Every student whose CURRENT registration breaks the timetable rule
+    (TTC-v1): two modules that meet at the same time. One row per module to
+    deregister, naming the lower-level module the student keeps.
+
+    "Current" is a registration with nothing posted yet in the latest calendar
+    year on record (or `year`), read per semester from the ERS block. Older
+    blank rows are leftovers of earlier exports, not registrations, and are
+    ignored for the same reason datasource.in_progress_now ignores them.
+    """
+    import regadvisor_engine as R
+    cur = _load_cur(store, programme)
+    tt, rule = R.clash_timetable(cur)
+    if cur is None or not tt:
+        return {"ready": False, "rows": [], "summary": {},
+                "error": "no rule file, no catalogue/timetable.yaml, or the clash rule "
+                         "is disabled for this programme"}
+    results = store.results(programme)
+    year = year or max((str(r["calendar_year"]) for rs in results.values() for r in rs),
+                       default="")
+    bio = {s["student_number"]: s for s in store.students(programme)}
+    level = lambda c: R.module_level(cur, c)
+    rows: list[dict[str, Any]] = []
+    for sn, rs in sorted(results.items()):
+        by_sem: dict[int, list[str]] = {}
+        for r in rs:
+            sem = {"1": 1, "2": 2}.get(str(r.get("block") or "").strip())
+            if (sem is None or str(r.get("calendar_year")) != year
+                    or (r.get("result_code") or "").strip() or r.get("grade") is not None):
+                continue
+            by_sem.setdefault(sem, []).append(R.core_code(r.get("module_code")))
+        b = bio.get(sn, {})
+        who = {"student_number": sn, "surname": b.get("surname", ""),
+               "name": b.get("name", ""), "year_of_study": b.get("year_of_study")}
+        for sem, codes in sorted(by_sem.items()):
+            res = R.find_clashes(codes, sem, tt, level)
+            for d in res["drop"]:
+                rows.append({**who, "year": year, "semester": sem,
+                             "keep": ", ".join(d["with"]), "deregister": d["code"],
+                             "block": d.get("block") or "", "periods": " ".join(d["periods"]),
+                             "action": "deregister", "rule_id": rule["rule_id"],
+                             "reason": R.clash_reason(d, rule["rule_id"])})
+            for t in res["ties"]:
+                rows.append({**who, "year": year, "semester": sem,
+                             "keep": t["codes"][0], "deregister": t["codes"][1],
+                             "block": t.get("block") or "", "periods": " ".join(t["periods"]),
+                             "action": "review (same level)", "rule_id": rule["rule_id"],
+                             "reason": R.clash_reason({**t, "with": [t["codes"][0]], "tie": True},
+                                                      rule["rule_id"])})
+    pairs: dict[str, int] = {}
+    for r in rows:
+        k = f"{r['keep']} keeps / {r['deregister']} goes (S{r['semester']})"
+        pairs[k] = pairs.get(k, 0) + 1
+    return {"ready": True, "year": year, "rule_id": rule["rule_id"], "rows": rows,
+            "summary": {"students": len({r["student_number"] for r in rows}),
+                        "lines": len(rows), "pairs": pairs}}

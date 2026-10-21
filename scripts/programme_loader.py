@@ -29,6 +29,9 @@ from regadvisor_engine import prereq_codes
 DEFAULT_CATALOGUE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "catalogue", "modules.yaml")
+# The School timetable as lecture periods per module, built from the semester
+# grids by scripts/build_timetable.py. Read for the clash rule (TTC-v1).
+DEFAULT_TIMETABLE = os.path.join(os.path.dirname(DEFAULT_CATALOGUE), "timetable.yaml")
 
 # Each prereq DICT must match exactly one of these key-sets. Anything else is an
 # authoring slip (a typo like `min_creditz`) the validator reports as an error.
@@ -83,6 +86,10 @@ DEFAULT_RULES: dict[str, Any] = {
         "probation_statuses": ["red"],
         "completion_reduces": True,   # degree completes -> reduced, on PC sign-off
     },
+    "timetable": {           # regadvisor_engine.apply_timetable -- TTC-v1
+        "enabled": True,     # a clash drops the higher-level module
+        "rule_id": "TTC-v1",
+    },
     "credit_cap": {          # DEPRECATED -- no standing is capped; see "load"
         "green": None, "orange": None, "red": None, "exclude": 0,
         "ERS-ORANGE-FIRSTSEM": None, "ERS-ORANGE-CUMUL": None, "ERS-ORANGE-SEM": None,
@@ -115,6 +122,23 @@ def load_catalogue(path: str | None = None) -> dict[str, dict[str, Any]]:
     return {str(k): dict(v or {}) for k, v in (raw.get("modules") or {}).items()}
 
 
+def load_timetable(path: str | None = None) -> dict[int, dict[str, dict[str, Any]]]:
+    """Read timetable.yaml into {sem: {code: {"block", "periods": set}}}. A
+    missing file is not an error: no timetable means no clash can be shown, and
+    the advice is exactly what it was before the rule existed."""
+    path = path or DEFAULT_TIMETABLE
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh) or {}
+    out: dict[int, dict[str, dict[str, Any]]] = {}
+    for sem, mods in (raw.get("semesters") or {}).items():
+        out[int(sem)] = {str(c): {"block": (v or {}).get("block"),
+                                  "periods": set((v or {}).get("periods") or [])}
+                         for c, v in (mods or {}).items()}
+    return out
+
+
 def _read_overrides(raw: Any) -> dict[tuple[str, str], dict[str, Any]]:
     """Index a catalogue_overrides block by (code, field). Malformed entries are
     dropped here and reported by validate_programme, never applied blind."""
@@ -130,16 +154,20 @@ def _read_overrides(raw: Any) -> dict[tuple[str, str], dict[str, Any]]:
 
 # --- Load -------------------------------------------------------------------
 def load_programme(path: str, validate: bool = True, strict: bool = True,
-                   catalogue: dict[str, dict[str, Any]] | str | None = None
+                   catalogue: dict[str, dict[str, Any]] | str | None = None,
+                   timetable: dict[int, dict[str, dict[str, Any]]] | str | None = None
                    ) -> dict[str, Any]:
     """Read an authored programme file into the engine's curriculum shape.
 
     validate:  run validate_programme and print its warnings.
     strict:    raise ValueError if validation reports any errors.
     catalogue: a loaded catalogue, a path to one, or None for the default.
+    timetable: a loaded timetable, a path to one, or None for the default.
     """
     if catalogue is None or isinstance(catalogue, str):
         catalogue = load_catalogue(catalogue)
+    if timetable is None or isinstance(timetable, str):
+        timetable = load_timetable(timetable)
     with open(path, encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
 
@@ -203,7 +231,8 @@ def load_programme(path: str, validate: bool = True, strict: bool = True,
            "rules": merge_rules(raw.get("rules")),
            "external_prereqs": sorted(set(external)),
            "equivalences": equivalences, "twins": twins,
-           "catalogue": catalogue, "catalogue_overrides": overrides}
+           "catalogue": catalogue, "catalogue_overrides": overrides,
+           "timetable": timetable}
     # cur = {"programme": prog, "modules": modules, "elective_groups": {},
     #        "rules": merge_rules(raw.get("rules"))}
 
@@ -474,6 +503,17 @@ def validate_programme(cur: dict[str, Any]) -> dict[str, list[str]]:
         if sum(want.values()) != prog_total:
             warnings.append(f"year_credits sums to {sum(want.values()):.0f}, "
                             f"programme.total_credits says {prog_total:.0f}")
+
+    # The clash rule looks a module up in the semester the programme puts it in.
+    # A timetable that places it only in the OTHER semester means one of the two
+    # is wrong, and the module would silently escape the clash check.
+    tt = cur.get("timetable") or {}
+    for code, m in codes.items():
+        sems = sorted(s for s, mods in tt.items() if code in mods)
+        if sems and m.get("sem") not in sems:
+            warnings.append(f"{code}: programme says semester {m.get('sem')}, the "
+                            f"timetable places it in semester {sems[0]} -- the clash "
+                            f"rule will not see it")
 
     cyc = _find_cycle(codes)
     if cyc:

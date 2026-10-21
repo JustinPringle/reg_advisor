@@ -189,7 +189,8 @@ class CsvSource:
         if sn not in self.results:
             return None
         return check_additions(self.cur, self.results[sn], codes,
-                               policy=None)
+                               policy=None,
+                               registered=in_progress_now(self.results[sn], self.current_year))
 
 
 def _num(v: Any) -> float | None:

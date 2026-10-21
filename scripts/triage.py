@@ -103,7 +103,7 @@ def triage_student(cur: dict[str, Any], rows: list[dict[str, Any]],
     chk = check_additions(cur, rows, codes)
     over_cap = a["cap"] is not None and chk["add_credits"] > a["cap"]
     bucket = {m["code"]: b for b in ("can_register", "concession_possible",
-                                     "cannot_register", "needs_review")
+                                     "cannot_register", "needs_review", "timetable_clash")
               for m in a["advice"][b]}
     by_code = {m["code"]: m for m in cur["modules"]}
     verdict = {r["code"]: r for r in chk["rows"]}

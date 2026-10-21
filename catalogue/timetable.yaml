@@ -1,0 +1,137 @@
+# timetable.yaml -- lecture periods per module, per semester.
+#
+# Two modules clash when they share a period. Read by
+# programme_loader.load_timetable and regadvisor_engine.find_clashes.
+#
+# GENERATED FILE -- do not hand-edit. Regenerate with:
+#   python scripts/build_timetable.py <S1.xlsx>:1 <S2.xlsx>:2 \
+#       --year 2026 --alias ENCV3GA=ENCV3G1 --out catalogue/timetable.yaml
+
+meta:
+  calendar_year: 2026
+  generated: '2026-10-21'
+  source: [Civ_Eng_Ttable_1st_semester_2026V2.xlsx, Civ_Eng_Ttable_2nd_Semester_2026V2.xlsx]
+  basis: lecture periods on the School timetable grid; (P)/(T) group sessions excluded
+  aliases: {ENCV3GA: ENCV3G1}
+  warnings: ['S1 Y4: ENPD7PP is block F on ''Blocking (CODES)'' but ''prof practice'' is block B on ''Blocking'';
+      used F', 'S1 Y4 ''engineering business'': on the grid but maps to no code (skipped)']
+semesters:
+  1:
+    CHEM181:
+      block: A
+      periods: [Thu2, Fri1]
+    EDSJ1CS:
+      block: C
+      periods: [Tue2, Tue3]
+    ENCH1TC:
+      block: D
+      periods: [Mon6]
+    ENCH4ML:
+      block: F
+      periods: [Wed5, Wed6]
+    ENCV2MT:
+      block: C
+      periods: [Tue2, Tue3, Thu1, Fri4]
+    ENCV2SA:
+      block: D
+      periods: [Mon6, Tue4, Tue5, Wed1, Fri7]
+    ENCV3FA:
+      block: A
+      periods: [Tue6, Thu2, Thu3, Fri4, Fri5]
+    ENCV3G1:
+      block: E
+      periods: [Mon4, Mon5, Tue1, Wed2, Thu7]
+    ENCV3ST:
+      block: B
+      periods: [Tue8, Tue9, Tue11, Wed7, Thu4, Thu5, Fri2]
+    ENCV3TT:
+      block: F
+      periods: [Mon2, Mon3, Wed3, Wed4, Wed5, Fri3]
+    ENCV4GS:
+      block: E
+      periods: [Mon4, Mon5, Tue1, Wed2, Thu7, Fri8, Fri9]
+    ENCV4TE:
+      block: D
+      periods: [Mon6, Tue4, Tue5, Wed1, Fri7]
+    ENCV4WE:
+      block: C
+      periods: [Mon7, Thu1, Thu2, Thu3, Fri4]
+    ENEL4EE:
+      block: F
+      periods: [Mon2, Mon3]
+    ENME1DR:
+      block: B
+      periods: [Wed7]
+    ENPD7PP:
+      block: F
+      periods: [Thu4, Thu5, Thu6, Fri1, Fri2, Fri3]
+    ENSV2SE:
+      block: B
+      periods: [Thu4, Thu5, Fri1, Fri2]
+    MATH131:
+      block: F
+      periods: [Mon2, Mon3, Tue7, Thu6]
+    MATH132:
+      block: E
+      periods: [Mon4, Mon5, Tue1, Fri8]
+    MATH238:
+      block: E
+      periods: [Mon4, Mon5, Tue1, Wed2]
+    PHYS151:
+      block: B
+      periods: [Mon1, Tue8, Thu4, Thu5]
+    STAT370:
+      block: D
+      periods: [Tue4, Tue5, Wed1, Fri7]
+  2:
+    CHEM191:
+      block: A
+      periods: [Thu2, Fri1]
+    ENCV1ED:
+      block: C
+      periods: [Tue2, Tue3]
+    ENCV2FL:
+      block: B
+      periods: [Thu4, Thu5, Fri2]
+    ENCV2SB:
+      block: A
+      periods: [Tue6, Thu2, Thu3, Fri1, Fri5]
+    ENCV2SD:
+      block: D
+      periods: [Mon6, Tue4, Tue5, Wed1, Thu8, Thu9, Fri7]
+    ENCV3FB:
+      block: A
+      periods: [Tue6, Thu2, Thu3, Fri4, Fri5]
+    ENCV3G2:
+      block: F
+      periods: [Mon2, Mon3, Wed3, Wed4, Wed5, Fri3]
+    ENCV3MS:
+      block: C
+      periods: [Mon7, Tue2, Tue3, Thu1]
+    ENCV3SD:
+      block: E
+      periods: [Mon4, Mon5, Tue1, Wed2, Thu7]
+    ENCV3TP:
+      block: B
+      periods: [Thu4, Thu5, Fri2]
+    ENME1EM:
+      block: E
+      periods: [Fri8, Fri9]
+    ENPD7CL:
+      block: D
+      periods: [Mon6, Tue4, Tue5, Wed1, Wed8, Wed9]
+    GEOL215:
+      block: F
+      periods: [Mon2, Mon3, Wed3, Wed4, Wed5, Fri3]
+    MATH141:
+      block: F
+      periods: [Mon2, Mon3, Tue7, Thu6]
+    MATH142:
+      block: E
+      periods: [Mon4, Mon5, Mon8, Tue1]
+    MATH248:
+      block: E
+      periods: [Mon4, Mon5, Tue1, Wed2]
+    PHYS152:
+      block: B
+      periods: [Mon1, Tue8, Tue9, Thu4, Thu5]

@@ -96,6 +96,19 @@ rules:
     probation_statuses: [red]
     completion_reduces: true
 
+  # Timetable clashes (TTC-v1). Two modules that share a lecture period on the
+  # School timetable (catalogue/timetable.yaml) cannot both be registered: the
+  # student deregisters the HIGHER-level module and takes the LOWER-level one.
+  # Surfaced by GEOL215 (L2) and ENCV3G2 (L3), both block F in semester 2.
+  # `exempt` lists modules whose clashes are not enforced -- e.g. a service
+  # module the student can attend in another lecture stream. Each entry should
+  # carry its reason in a comment. Empty = the rule applies to every module the
+  # grid places. -- Justin Pringle 2026-10-21
+  timetable:
+    enabled: true
+    exempt: []
+    rule_id: TTC-v1
+
   # DEPRECATED. Every entry is null: green, orange and red are uncapped.
   # Kept only so ers_credit_cap() has something to read until its callers move
   # to rules.load. Delete with the function.

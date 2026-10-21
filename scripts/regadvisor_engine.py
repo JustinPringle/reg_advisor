@@ -286,6 +286,150 @@ def check_prereqs(mod: dict[str, Any], tx: dict[str, Any]) -> dict[str, Any]:
                            if not str(r["label"]).startswith("[review"))}
 
 
+# --- Timetable clashes: TTC-v1 ------------------------------------------------
+# Programme rule: a student may not register two modules that meet at the same
+# time. Where two clash, the student deregisters the HIGHER-level module and
+# takes the LOWER-level one -- clear the backlog before moving up. GEOL215 (L2)
+# and ENCV3G2 (L3), both block F in semester 2, surfaced the rule.
+#
+# The timetable is data (catalogue/timetable.yaml, built from the School grid by
+# build_timetable.py): {sem: {code: {"block": "F", "periods": {"Mon2", ...}}}}.
+# Two modules clash when they share a period. A module the timetable does not
+# place cannot be shown to clash, so it is never dropped on a guess.
+DEFAULT_TIMETABLE_RULE: dict[str, Any] = {"enabled": True, "exempt": [], "rule_id": "TTC-v1"}
+
+
+def clash_timetable(curriculum: dict[str, Any] | None
+                    ) -> tuple[dict[Any, Any], dict[str, Any]]:
+    """(timetable the rule enforces, merged rule). The one place the rule is
+    read, so the advice, the COC check and the cohort audit cannot disagree.
+
+    `exempt` names modules whose clashes are not enforced -- a module the
+    grid places, but which the student can take at another time (a service
+    module with a second lecture stream, say). An exempt module is taken out of
+    the timetable, so it neither drops nor is dropped. Disabled rule -> {}."""
+    cur = curriculum or {}
+    rule = {**DEFAULT_TIMETABLE_RULE, **((cur.get("rules") or {}).get("timetable") or {})}
+    tt = cur.get("timetable") or {}
+    if not tt or not rule.get("enabled"):
+        return {}, rule
+    skip = {str(c) for c in rule.get("exempt") or []}
+    if skip:
+        tt = {s: {c: v for c, v in mods.items() if c not in skip} for s, mods in tt.items()}
+    return tt, rule
+
+
+def module_level(curriculum: dict[str, Any] | None, code: str) -> int:
+    """A module's level: the programme's authored value, then the catalogue's
+    (which carries the ITS level overrides), then the first digit of the code."""
+    cur = curriculum or {}
+    for m in cur.get("modules", []):
+        if m.get("code") == code and isinstance(m.get("level"), int):
+            return m["level"]
+    lv = ((cur.get("catalogue") or {}).get(code) or {}).get("level")
+    return lv if isinstance(lv, int) else code_level(code)
+
+
+_DAY = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4}
+
+
+def _periods(ps: Any) -> list[str]:
+    """Periods in timetable order -- Mon1 .. Fri11 -- for messages."""
+    return sorted(ps, key=lambda p: (_DAY.get(str(p)[:3], 9), int(str(p)[3:] or 0)))
+
+
+def find_clashes(codes: Any, sem: int, timetable: dict[Any, Any] | None,
+                 level_of: Any = code_level) -> dict[str, Any]:
+    """Resolve one semester's basket against the timetable.
+
+    Modules are taken lowest level first. Each is kept unless it shares a
+    period with a module already kept, in which case it is dropped -- the lower
+    level stays, the higher goes. Two clashing modules at the SAME level are a
+    tie: the rule cannot choose, so neither is dropped and the tie goes to a
+    person. Taking the lowest level first also means a module dropped for a
+    clash never knocks out a third one it alone would have collided with.
+    -> {keep:[code], drop:[{code, with:[code], block, periods:[p]}],
+        ties:[{codes:[a, b], block, periods:[p]}]}
+    """
+    slots = (timetable or {}).get(sem) or (timetable or {}).get(str(sem)) or {}
+    placed = [c for c in dict.fromkeys(codes) if c in slots]
+    order = sorted(placed, key=lambda c: (level_of(c), c))
+    keep: list[str] = []
+    drop: list[dict[str, Any]] = []
+    ties: list[dict[str, Any]] = []
+    for c in order:
+        mine = set(slots[c]["periods"])
+        hits = [k for k in keep if mine & set(slots[k]["periods"])]
+        lower = [k for k in hits if level_of(k) < level_of(c)]
+        if lower:
+            shared = _periods({p for k in lower for p in mine & set(slots[k]["periods"])})
+            drop.append({"code": c, "with": lower, "block": slots[c].get("block"),
+                         "periods": shared})
+            continue
+        for k in hits:                       # same level: a tie, keep both
+            ties.append({"codes": [k, c], "block": slots[c].get("block"),
+                         "periods": _periods(mine & set(slots[k]["periods"]))})
+        keep.append(c)
+    return {"keep": keep, "drop": drop, "ties": ties}
+
+
+def clash_reason(d: dict[str, Any], rule_id: str = "TTC-v1") -> str:
+    """One line for a dropped module -- or, with `tie`, a same-level clash --
+    for the page, the COC check and the CSV."""
+    if d.get("tie"):
+        return (f"timetable clash at the same level with {', '.join(d['with'])} "
+                f"({' '.join(d['periods'])}): needs a person [{rule_id}]")
+    return (f"timetable clash with {', '.join(d['with'])} (block {d.get('block') or '?'}, "
+            f"{' '.join(d['periods'])}): take the lower-level "
+            f"{', '.join(d['with'])} first, deregister {d['code']} [{rule_id}]")
+
+
+def apply_timetable(curriculum: dict[str, Any], out: dict[str, list[dict[str, Any]]]
+                    ) -> dict[str, list[dict[str, Any]]]:
+    """Move the higher-level module of every clash out of the registrable
+    buckets into `timetable_clash`, and send equal-level clashes to review.
+
+    The basket is everything the student may end up registering this year:
+    can_register, concession_possible and needs_review. A blocked module will
+    not be registered, so it displaces nothing."""
+    tt, rule = clash_timetable(curriculum)
+    out.setdefault("timetable_clash", [])
+    if not tt:
+        return out
+    live = ("can_register", "concession_possible", "needs_review")
+    where = {r["code"]: b for b in live for r in out[b]}
+    level = lambda c: module_level(curriculum, c)
+    by_sem: dict[int, list[str]] = {}
+    for b in live:
+        for r in out[b]:
+            if isinstance(r.get("sem"), int):
+                by_sem.setdefault(r["sem"], []).append(r["code"])
+    for sem, codes in sorted(by_sem.items()):
+        res = find_clashes(codes, sem, tt, level)
+        for d in res["drop"]:
+            b = where[d["code"]]
+            row = next(r for r in out[b] if r["code"] == d["code"])
+            out[b].remove(row)
+            out["timetable_clash"].append({**row, "clash": {
+                **d, "sem": sem, "was": b, "rule_id": rule["rule_id"],
+                "reason": clash_reason(d, rule["rule_id"])}})
+        for t in res["ties"]:
+            for code in t["codes"]:
+                b = where[code]
+                row = next((r for r in out[b] if r["code"] == code), None)
+                if row is None:
+                    continue
+                tie = {**t, "code": code, "with": [x for x in t["codes"] if x != code],
+                       "tie": True}
+                row["clash"] = {**tie, "sem": sem, "rule_id": rule["rule_id"],
+                                "reason": clash_reason(tie, rule["rule_id"])}
+                if b != "needs_review":
+                    out[b].remove(row)
+                    out["needs_review"].append(row)
+                    where[code] = "needs_review"
+    return out
+
+
 # --- Finalist route: can this student complete the degree this year? ---------
 # Distinct from a concession. A concession asks "did you nearly pass the
 # prerequisite"; the finalist route asks "if you register the capstones now,
@@ -413,6 +557,8 @@ def eval_advice(curriculum: dict[str, Any], tx: dict[str, Any],
     cannot_register     : blocked
     repeat_needed       : attempted before (overlay flag; a course can be both
                           repeat_needed and one of the three above)
+    timetable_clash     : registrable, but meets at the same time as a lower-level
+                          module the student must take first (TTC-v1)
     passed              : already done
     """
     c = (curriculum.get("rules") or {}).get("concession") or {}
@@ -423,7 +569,7 @@ def eval_advice(curriculum: dict[str, Any], tx: dict[str, Any],
     if concession_floor is None:
         concession_floor = c.get("prereq_floor", 45)
     out = {"can_register": [], "concession_possible": [], "cannot_register": [],
-           "needs_review": [], "repeat_needed": [], "passed": []}
+           "needs_review": [], "timetable_clash": [], "repeat_needed": [], "passed": []}
     for mod in curriculum.get("modules", []):
         if mod.get("type") in ("free_elective", "core_elective", "elective"):
             continue
@@ -457,7 +603,7 @@ def eval_advice(curriculum: dict[str, Any], tx: dict[str, Any],
             out["concession_possible"].append(row)
         else:
             out["cannot_register"].append(row)
-    return out
+    return apply_timetable(curriculum, out)
 
 
 # --- Curricular-analytics extras --------------------------------------------

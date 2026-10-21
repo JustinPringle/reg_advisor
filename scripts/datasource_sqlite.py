@@ -22,7 +22,7 @@ from typing import Any
 from pathlib import Path
 
 from programme_loader import load_programme, fill_missing_credits
-from advise import advise_student, check_additions
+from advise import advise_student, check_additions, basket_clashes
 import regadvisor_engine as R
 import ers_check as X
 from checks_service import _complete_set
@@ -209,7 +209,8 @@ class SqliteSource:
             return {"bio": bio, "advice_ready": False, "official": official,
                     "engine": None, "agree": None, "cap": None,
                     "advice": {k: [] for k in ("can_register", "concession_possible",
-                               "cannot_register", "needs_review", "passed")}}
+                               "cannot_register", "needs_review", "timetable_clash",
+                               "passed")}}
         tx, cap, adv = a["tx"], a["cap"], a["advice"]
         chk = self.standing(sn)["check"]
         in_progress = in_progress_now(self.results[sn], self.current_year)
@@ -267,6 +268,8 @@ class SqliteSource:
                        "unmet": x.get("prereq_check", {}).get("unmet", []),
                        "mark": best["mark"] if best else None,
                        "prereq_marks": carry}
+                if x.get("clash"):
+                    row["clash"] = x["clash"]["reason"]
                 if twin_of:
                     row["twin_of"] = twin_of
                 out.append(row)
@@ -290,13 +293,19 @@ class SqliteSource:
             "standing": {k: a["ers"][k] for k in ("status", "code", "label", "source")},
             "agree": self._agree(sn),
             "cap": cap,
+            # TTC-v1 on what the student is registered for now: a clash here is
+            # an existing registration the admin must undo.
+            "registration_clashes": [
+                {k: d[k] for k in ("code", "with", "block", "periods", "sem", "reason")}
+                for d in basket_clashes(self.cur, [], in_progress)],
             "advice": {k: slim(adv[k]) for k in
                        ("can_register", "concession_possible", "cannot_register",
-                        "needs_review", "passed")},
+                        "needs_review", "timetable_clash", "passed")},
         }
 
     def check(self, sn: str, codes: list[str]) -> dict[str, Any] | None:
         if sn not in self.results or not self.advice_ready:
             return None
         return check_additions(self.cur, self.results[sn], codes,
-                               standing=self.standing(sn))
+                               standing=self.standing(sn),
+                               registered=in_progress_now(self.results[sn], self.current_year))

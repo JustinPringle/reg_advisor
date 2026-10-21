@@ -123,6 +123,18 @@ rules:
     single_miss_only: true
     allowed_standings: [green, orange]
     rule_id: CAC-v1
+  # Timetable clashes (TTC-v1). Two modules that share a lecture period on the
+  # School timetable (catalogue/timetable.yaml) cannot both be registered: the
+  # student deregisters the HIGHER-level module and takes the LOWER-level one.
+  # Surfaced by GEOL215 (L2) and ENCV3G2 (L3), both block F in semester 2.
+  # `exempt` lists modules whose clashes are not enforced -- e.g. a service
+  # module the student can attend in another lecture stream. Each entry should
+  # carry its reason in a comment. Empty = the rule applies to every module the
+  # grid places. -- Justin Pringle 2026-10-21
+  timetable:
+    enabled: true
+    exempt: []
+    rule_id: TTC-v1
   credit_cap:
     green: null
     orange: null
