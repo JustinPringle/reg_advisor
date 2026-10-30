@@ -69,7 +69,10 @@ class SqliteSource:
         self._cols: dict[str, list[dict[str, Any]]] = {}
         for c in store.colour_rows(programme):
             self._cols.setdefault(str(c["student_number"]), []).append(c)
-        self._complete = _complete_set(store, programme, self.cur)
+        # Completion reads the same credit-filled rows as the ERS check.
+        self._complete = _complete_set(self.cur, {
+            "results": [r for rows in self._raw.values() for r in rows],
+            "students": list(self.bio.values())})
         self._standings: dict[str, dict[str, Any]] = {}
         self._cache: dict[str, dict[str, Any]] = {}
         self.active_years = {sn: {str(r["calendar_year"]) for r in rows if r.get("calendar_year")}

@@ -36,7 +36,7 @@ def backtest(store: Any, programme: str, since: str = "") -> dict[str, Any]:
     """Score the engine against every stated registrar standing."""
     cur, parsed, _ = CS._source(store, programme, "final")
     policy = ((cur or {}).get("rules") or {}).get("ers")
-    complete = CS._complete_set(store, programme, cur)
+    complete = CS._complete_set(cur, parsed)
     by_sn = X.group_by_sn(parsed)
 
     rows_out: list[dict[str, Any]] = []

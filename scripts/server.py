@@ -224,7 +224,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"documents": STORE.documents(self._q("programme"))})
         elif path == "/api/completion":
             self._json(CHK.completion(STORE, self._q("programme"),
-                                      self._q("year"), self._q("sem")))
+                                      self._q("year"), self._q("sem"),
+                                      self._q("source", "final")))
         elif path == "/api/health":
             # Optional period window for the ECSA report: y0/s0 (from) .. y1/s1 (to),
             # inclusive. All four must be present, else the whole record is read.
@@ -321,11 +322,20 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/completion/export":
             programme = str(req.get("programme", "")) or self._q("programme")
             year, sem = str(req.get("year", "")), str(req.get("sem", ""))
-            comp = CHK.completion(STORE, programme, year, sem)
+            comp_source = str(req.get("source", "")) or self._q("source", "final")
+            comp = CHK.completion(STORE, programme, year, sem, comp_source)
+            if not comp.get("ready"):
+                self._json({"ok": False, "source": comp.get("source", comp_source),
+                            "error": comp.get("error", "completion not available")}, 400)
+                return
             from completion import export_completion
-            dg = export_completion(comp["DC"], str(ADMIN_DIR / f"degree_complete_{programme}.csv"))
-            dgor = export_completion(comp["DGOR"], str(ADMIN_DIR / f"vac_only_{programme}.csv"), dgor=True)
-            self._json({"ok": True, "DG": {"path": str(dg.relative_to(ROOT)), "count": len(comp["DC"])},
+            # The final run keeps its established file names; an initial run is
+            # suffixed so the exam-board list never overwrites the captured one.
+            tag = "_initial" if comp["source"] == "initial" else ""
+            dg = export_completion(comp["DC"], str(ADMIN_DIR / f"degree_complete_{programme}{tag}.csv"))
+            dgor = export_completion(comp["DGOR"], str(ADMIN_DIR / f"vac_only_{programme}{tag}.csv"), dgor=True)
+            self._json({"ok": True, "source": comp["source"],
+                        "DG": {"path": str(dg.relative_to(ROOT)), "count": len(comp["DC"])},
                         "DGOR": {"path": str(dgor.relative_to(ROOT)), "count": len(comp["DGOR"])}})
         elif path == "/api/erscheck/export":
             programme = str(req.get("programme", "")) or self._q("programme")

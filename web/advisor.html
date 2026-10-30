@@ -222,7 +222,7 @@ const $ = s => document.querySelector(s);
 let MODE="advisor", STUDENTS=[], DEC={}, CURRENT=null, DETAIL=null;
 let PROGRAMME=null, PROGRAMMES=[];
 let CYCLES=[], CYCLE=null, ROSTER=[], RUN=null, RUNDATA=null, ADMINDATA=null, ERSSOURCE="final";
-let COMPDATA=null, COMPPERIOD=null;
+let COMPDATA=null, COMPPERIOD=null, COMPSOURCE="final";
 let DECIDER=""; try{ DECIDER=localStorage.getItem("regadvisor_decider")||""; }catch(e){}
 function setDecider(v){ DECIDER=(v||"").trim(); try{ localStorage.setItem("regadvisor_decider",DECIDER); }catch(e){} }
 const MODES=["advisor","cohort","completion","health"];
@@ -616,8 +616,15 @@ async function exportErs(){
 /* ---- completion tab (keyed on completion period) ---- */
 async function loadCompletion(){
   const q = COMPPERIOD ? "&year="+encodeURIComponent(COMPPERIOD.year)+"&sem="+encodeURIComponent(COMPPERIOD.semester) : "";
-  COMPDATA = await (await fetch("/api/completion"+pq()+q)).json();
+  COMPDATA = await (await fetch("/api/completion"+pq()+q+"&source="+COMPSOURCE)).json();
   renderCompletionSide(); renderCompletionMain();
+}
+function setCompSource(src){ COMPSOURCE=src; COMPPERIOD=null; loadCompletion(); }
+function compSourceButtons(){
+  return `<div class="qhead">Source</div>
+    <div style="margin-bottom:10px">
+      <button class="modebtn ${COMPSOURCE==='final'?'on':''}" onclick="setCompSource('final')">Final</button>
+      <button class="modebtn ${COMPSOURCE==='initial'?'on':''}" onclick="setCompSource('initial')">Initial</button></div>`;
 }
 function onCompPeriod(val){
   COMPPERIOD = val ? {year:val.split("|")[0], semester:Number(val.split("|")[1])} : null;
@@ -630,6 +637,7 @@ function renderCompletionSide(){
     (c.periods||[]).map(p=>{const v=p.year+"|"+p.semester;
       return `<option value="${esc(v)}"${sel===v?" selected":""}>${esc(p.year)} \u00b7 Sem ${p.semester} (${p.dc+p.dgor})</option>`;}).join("");
   $("#side").innerHTML=`
+    ${compSourceButtons()}
     <div class="qhead">Completed period</div>
     <select class="cysel" style="width:100%;margin-bottom:10px" onchange="onCompPeriod(this.value)">${opts}</select>
     <button class="primary" style="width:100%" ${(s.DC||s.DGOR)?"":"disabled"} onclick="exportCompletion()">Export both lists (CSV)</button>
@@ -642,7 +650,7 @@ function renderCompletionSide(){
       <b>DC</b> \u2014 every prescribed module passed (\u2265 50); dated by the last requirement met.<br>
       <b>DGOR</b> \u2014 only vacation work outstanding.<br>
       Elective slots need your sign-off and are flagged, not gated.</div>
-    ${c.ready===false?'<div class="flag warn">This programme has no rule file bound, so completion cannot be computed.</div>':""}`;
+    ${c.ready===false?`<div class="flag warn">${esc(c.error||"This programme has no rule file bound, so completion cannot be computed.")}</div>`:""}`;
 }
 function completionTable(rows,dgor){
   if(!rows.length) return '<p style="font-size:13px;color:var(--muted);margin:0">None.</p>';
@@ -663,7 +671,8 @@ function groupByPeriod(rows){
 function renderCompletionMain(){
   const c=COMPDATA||{DC:[],DGOR:[]};
   const dc=c.DC||[], dgor=c.DGOR||[];
-  const scope=COMPPERIOD?`${esc(COMPPERIOD.year)} \u00b7 Sem ${COMPPERIOD.semester}`:"all periods";
+  const scope=(COMPPERIOD?`${esc(COMPPERIOD.year)} \u00b7 Sem ${COMPPERIOD.semester}`:"all periods")
+              +(COMPSOURCE==="initial"?" \u00b7 initial ERS":"");
   const groups=groupByPeriod(dc);
   const dcBody=groups.length
     ? groups.map(([k,rows])=>`<div class="bucket">
@@ -677,9 +686,10 @@ function renderCompletionMain(){
       ${completionTable(dgor,true)}</div>`;
 }
 async function exportCompletion(){
-  const body={programme:PROGRAMME};
+  const body={programme:PROGRAMME, source:COMPSOURCE};
   if(COMPPERIOD){ body.year=COMPPERIOD.year; body.sem=COMPPERIOD.semester; }
   const r=await (await fetch("/api/completion/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
+  if(!r.ok){ $("#saved").textContent=r.error||"Export failed."; return; }
   $("#saved").textContent=`Saved DC (${r.DG.count}) \u2192 ${r.DG.path} \u00b7 DGOR (${r.DGOR.count}) \u2192 ${r.DGOR.path}`;
 }
 

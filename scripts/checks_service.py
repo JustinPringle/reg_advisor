@@ -4,11 +4,13 @@ checks_service.py -- run the completion and ERS checks from the store or a PDF.
 Two sources:
 
   final    the captured record in the database. Completion lists and the ERS
-           self-consistency check read from here.
+           self-consistency check read from here by default.
 
   initial  a raw ERS run kept on file but never ingested into the main tables.
-           The ERS check re-parses it on demand, so staff can check the run
-           BEFORE capture without letting its provisional codes into the record.
+           The completion lists and the ERS check both re-parse it on demand,
+           so staff can report degree completions to the exam board and check
+           the run BEFORE capture, without letting its provisional results or
+           codes into the record.
 
 Keeping the database as the single "final" record, while parsing an initial PDF
 only when asked, is how the tool stores just the final yet still checks the
@@ -44,18 +46,37 @@ def results_by_sn(store: Any, programme: str) -> dict[str, list[dict[str, Any]]]
     return store.results(programme)
 
 
-def _complete_set(store: Any, programme: str,
-                  cur: dict[str, Any] | None) -> set[str]:
+def _by_student(parsed: dict[str, list[dict[str, Any]]]
+                ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]]]:
+    """(results grouped by student, bio by student) from a parsed source.
+
+    The store hands results back already grouped; a parsed PDF hands back one
+    flat list. Grouping here lets the completion rule read either source the
+    same way.
+    """
+    by_sn: dict[str, list[dict[str, Any]]] = {}
+    for r in parsed["results"]:
+        by_sn.setdefault(str(r["student_number"]), []).append(r)
+    bio = {str(r["student_number"]): r for r in parsed["students"]}
+    return by_sn, bio
+
+
+def _complete_set(cur: dict[str, Any] | None,
+                  parsed: dict[str, list[dict[str, Any]]]) -> set[str]:
     """Students who have finished the degree, by the same completion rule the
     Completion tab uses -- one definition, read twice, so the two tabs cannot
     disagree. DGOR (all academic requirements met, vacation work outstanding) is
     included: progression is no longer being assessed for them either. Empty
     when the programme has no rule file, which leaves the check as it was.
+
+    Reads the SAME source as the check that asks. Checking an initial run
+    against the final record's completions would leave a student who finished
+    this semester looking at risk, because the record is a semester behind.
     """
     if cur is None:
         return set()
-    bio = {r["student_number"]: r for r in store.students(programme)}
-    lists = C.completion_lists(cur, store.results(programme), bio)
+    by_sn, bio = _by_student(parsed)
+    lists = C.completion_lists(cur, by_sn, bio)
     return {str(r["student_number"]) for r in lists["DC"] + lists["DGOR"]}
 
 
@@ -71,19 +92,28 @@ def _load_cur(store: Any, programme: str) -> dict[str, Any] | None:
 
 
 def completion(store: Any, programme: str,
-               year: str = "", sem: str = "") -> dict[str, Any]:
+               year: str = "", sem: str = "",
+               source: str = "final") -> dict[str, Any]:
     """Degree-complete (DC) and vac-work-only (DGOR) lists.
+
+    `source` follows the ERS check: `final` reads the captured record,
+    `initial` re-parses the raw run on file -- the list reported to the exam
+    board before the final run. Either way the same completion rule runs, and
+    nothing is written to the store.
 
     `year`/`sem` scope by COMPLETION PERIOD -- the period a student met the last
     requirement -- not by who is active now. `periods` is always the full
     breakdown, so the picker stays put while the lists filter beneath it.
     """
-    cur = _load_cur(store, programme)
+    empty = {"DC": [], "DGOR": [], "periods": [], "summary": {"DC": 0, "DGOR": 0}}
+    cur, parsed, source = _source(store, programme, source)
+    if parsed is None:
+        return {"ready": False, "source": source,
+                "error": "no initial ERS on file for this programme", **empty}
     if cur is None:
-        return {"ready": False, "DC": [], "DGOR": [], "periods": [],
-                "summary": {"DC": 0, "DGOR": 0}}
-    bio = {r["student_number"]: r for r in store.students(programme)}
-    lists = C.completion_lists(cur, store.results(programme), bio)
+        return {"ready": False, "source": source, **empty}
+    by_sn, bio = _by_student(parsed)
+    lists = C.completion_lists(cur, by_sn, bio)
     dc, dgor = lists["DC"], lists["DGOR"]
 
     counts: dict[tuple[str, Any], dict[str, int]] = {}
@@ -100,8 +130,8 @@ def completion(store: Any, programme: str,
                           and str(r.get("completed_semester")) == sem)
         dc = [r for r in dc if keep(r)]
         dgor = [r for r in dgor if keep(r)]
-    return {"ready": True, "DC": dc, "DGOR": dgor, "periods": periods,
-            "summary": {"DC": len(dc), "DGOR": len(dgor)}}
+    return {"ready": True, "source": source, "DC": dc, "DGOR": dgor,
+            "periods": periods, "summary": {"DC": len(dc), "DGOR": len(dgor)}}
 
 
 def _source(store: Any, programme: str, source: str) -> tuple[Any, Any, str]:
@@ -142,7 +172,7 @@ def ers_check(store: Any, programme: str, source: str = "final",
     # answers will be wrong. Say so rather than let a silent fallback be read as
     # a cohort full of disagreements.
     report = X.check_parsed(parsed, cur, roster=only,
-                            complete=_complete_set(store, programme, cur))
+                            complete=_complete_set(cur, parsed))
     report["rules_ready"] = cur is not None
     if cur is None:
         report["warning"] = (f"No rule file loaded for {programme}: the check ran on "
@@ -183,7 +213,7 @@ def student_detail(store: Any, programme: str, sn: str,
     # student -- the check's own row -- so a student opened here can never read
     # differently from their row in the list.
     policy = ((cur or {}).get("rules") or {}).get("ers")
-    complete = sn in _complete_set(store, programme, cur)
+    complete = sn in _complete_set(cur, parsed)
     period, _ = X.judged_period(sdecs, scols, X._run_period(parsed["decisions"]))
     chk = X.assess(rows, sdecs, scols, policy, period=period, degree_complete=complete)
     prior = chk["prior_code"]
